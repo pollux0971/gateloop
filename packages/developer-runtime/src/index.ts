@@ -278,3 +278,153 @@ export async function producePatchProposal(
   };
   return { ok: true, proposal, errors: [], rejected_paths: [] };
 }
+
+// ── Pre-submit Observe loop (the ReAct Observe step the Developer lacked) ─────
+//
+// Before this, the Developer was single-shot: one askModel → three STATIC gates
+// (write-set, acceptance-test authorship, additive=no-delete + has-rollback) →
+// emit. None of those gates apply the patch or run a single test, so a `modify`
+// that strips an earlier story's in-file behaviour passed every gate and shipped
+// (the S2-deletion failure). The missing step is OBSERVE: apply the patch, run the
+// affected tests, look at the result, and self-correct on red.
+//
+// This loop is the Observe. It is harness-orchestrated (the model call inside each
+// round is still single-shot — same as runDebugLoop): produce → observe → if red,
+// feed the red tests back and produce again → bounded self-correction. A proposal
+// can only reach `submit` AFTER a preflight that passed, so emitting without having
+// observed is structurally impossible (and additionally guarded by
+// assertDeveloperObservedBeforeEmit). CI-safe: both collaborators are injected.
+
+/** The Observe outcome the loop reads. Structurally compatible with
+ *  PreflightExecReport from @gateloop/preflight-runner (executePreflight) — only the
+ *  fields the loop needs are required, keeping developer-runtime decoupled. */
+export interface PreflightObservation {
+  passed: boolean;
+  /** Tests that went red applying this patch — fed back for self-correction. */
+  failing_tests: string[];
+  /** Proof the observation was a real apply-and-run, not a map read. */
+  executed: true;
+  verdict?: 'submit' | 'self_correct' | 'escalate';
+  typecheck_ok?: boolean;
+}
+
+/** Feedback handed to the developer provider for a self-correction round. */
+export interface ObserveFeedback {
+  /** The self-correction round number (1 = first correction after the initial red). */
+  attempt: number;
+  /** The tests that were red in the previous round. */
+  failing_tests: string[];
+  /** Whether typecheck was clean in the previous round. */
+  typecheck_ok: boolean;
+}
+
+/** Injected collaborators for the Observe loop (both CI-safe / scripted in fixtures). */
+export interface DeveloperObserveDeps {
+  /** Produce a patch proposal. `feedback` is null on the first turn, then carries the
+   *  prior round's red tests so the developer can self-correct. Scripted in CI. */
+  developerProvider(feedback: ObserveFeedback | null): Promise<ProducePatchProposalResult> | ProducePatchProposalResult;
+  /** Observe a proposal: apply it to a disposable workspace and run the affected
+   *  tests for real, returning the result. Wraps executePreflight in production. */
+  observe(proposal: PatchProposal): Promise<PreflightObservation> | PreflightObservation;
+  /** Max self-corrections after the initial red (03_DEVELOPER_AGENT.md ⇒ 2). */
+  maxSelfCorrections?: number;
+  /** Optional trace sink — one event per round (the preflight result + attempt). */
+  trace?(event: {
+    type: 'developer_preflight';
+    attempt: number;
+    passed: boolean;
+    failing_tests: string[];
+    verdict: 'submit' | 'self_correct' | 'escalate';
+  }): void;
+}
+
+export type DeveloperObserveResult =
+  | { kind: 'submit'; proposal: PatchProposal; attempts: number; observed: true }
+  | { kind: 'escalated'; attempts: number; reason: string; observed: boolean };
+
+/**
+ * Run the Developer's pre-submit Observe loop with bounded self-correction.
+ *
+ *   produce → OBSERVE (apply + run affected tests) →
+ *     green ⇒ submit (only path to emit; always observed)
+ *     red & budget left ⇒ feed the red tests back, produce a corrected patch, re-observe
+ *     red & budget exhausted (or recurring signature) ⇒ escalate, never loop
+ *
+ * Mirrors runDebugLoop's injection model. Deterministic given the same provider
+ * outputs and observations; no LLM and no network are required to test it.
+ */
+export async function runDeveloperObserveLoop(
+  deps: DeveloperObserveDeps,
+): Promise<DeveloperObserveResult> {
+  const maxSelfCorrections = deps.maxSelfCorrections ?? 2;
+  let attempts = 0; // number of self-corrections performed so far
+  let feedback: ObserveFeedback | null = null;
+
+  let prod = await deps.developerProvider(feedback);
+  if (!prod.ok || !prod.proposal) {
+    return { kind: 'escalated', attempts, reason: 'developer produced no proposal to observe', observed: false };
+  }
+
+  // Loop invariant: `prod.proposal` is the current candidate; it is OBSERVED before
+  // it can ever be submitted.
+  for (;;) {
+    const report = await deps.observe(prod.proposal);
+    const verdict: 'submit' | 'self_correct' | 'escalate' = report.passed
+      ? 'submit'
+      : attempts >= maxSelfCorrections
+        ? 'escalate'
+        : 'self_correct';
+
+    deps.trace?.({
+      type: 'developer_preflight',
+      attempt: attempts,
+      passed: report.passed,
+      failing_tests: report.failing_tests,
+      verdict,
+    });
+
+    if (report.passed) {
+      // Only exit to emit — and only after a real observation passed.
+      return { kind: 'submit', proposal: prod.proposal, attempts, observed: true };
+    }
+
+    if (attempts >= maxSelfCorrections) {
+      return {
+        kind: 'escalated',
+        attempts,
+        reason: `preflight still red after ${attempts} self-correction(s): ${report.failing_tests.join(', ') || 'unknown failure'}`,
+        observed: true,
+      };
+    }
+
+    // Self-correct: feed the red tests back and ask for a corrected patch.
+    attempts++;
+    feedback = {
+      attempt: attempts,
+      failing_tests: report.failing_tests,
+      typecheck_ok: report.typecheck_ok ?? true,
+    };
+    prod = await deps.developerProvider(feedback);
+    if (!prod.ok || !prod.proposal) {
+      return { kind: 'escalated', attempts, reason: 'developer produced no corrected proposal', observed: true };
+    }
+  }
+}
+
+/**
+ * Tested invariant: a Developer proposal may not reach emit without having been
+ * OBSERVED (a real preflight run) that PASSED. Any emit path must call this; it
+ * makes "ship without running the tests" — the S2-deletion failure mode — throw
+ * rather than silently proceed.
+ */
+export function assertDeveloperObservedBeforeEmit(ctx: {
+  proposalId: string;
+  preflight?: { executed?: boolean; passed?: boolean } | null;
+}): void {
+  if (!ctx.preflight || ctx.preflight.executed !== true) {
+    throw new Error(`developer_emit_without_observe: proposal ${ctx.proposalId} reached emit with no real preflight run`);
+  }
+  if (ctx.preflight.passed !== true) {
+    throw new Error(`developer_emit_with_failed_preflight: proposal ${ctx.proposalId} preflight did not pass`);
+  }
+}

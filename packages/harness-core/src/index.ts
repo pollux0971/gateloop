@@ -86,6 +86,25 @@ export function canTransition(from: HarnessState, to: HarnessState): boolean {
   return TRANSITIONS[from]?.includes(to) ?? false;
 }
 
+/**
+ * Wire the Developer pre-submit Observe (DEVELOPER_PREFLIGHT) into the state machine.
+ * Maps a preflight verdict to the next legal state and asserts the transition is
+ * legal (so the wiring can never drift from TRANSITIONS):
+ *   submit       → SPEC_CONFORMANCE_REVIEW  (observed & green ⇒ on to the hard gate)
+ *   self_correct → DEVELOPER_PATCH_PROPOSAL (red within budget ⇒ back to the Developer)
+ *   escalate     → HUMAN_GATE               (budget exhausted / recurring ⇒ stop, never loop)
+ */
+export function preflightVerdictToState(verdict: 'submit' | 'self_correct' | 'escalate'): HarnessState {
+  const to: HarnessState =
+    verdict === 'submit' ? 'SPEC_CONFORMANCE_REVIEW'
+    : verdict === 'self_correct' ? 'DEVELOPER_PATCH_PROPOSAL'
+    : 'HUMAN_GATE';
+  if (!canTransition('DEVELOPER_PREFLIGHT', to)) {
+    throw new Error(`illegal DEVELOPER_PREFLIGHT transition to ${to} for verdict ${verdict}`);
+  }
+  return to;
+}
+
 // ── Story record (mirrors tracker_state.json.stories[n]) ─────────────────────
 
 export interface StoryRecord {
