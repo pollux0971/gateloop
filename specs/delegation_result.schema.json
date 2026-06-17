@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "DelegationResult",
+  "description": "The ONE shape the exit gate (STORY-033.6) consumes regardless of which external CLI or driver (headless/acp) produced it. Authority is explicit: `diff` (git diff vs the PRE-delegation tree) is AUTHORITATIVE and is what gets gated; `claimed_changes` and `agent_self_report` are ADVISORY (diagnosis only) and NEVER gated. A missing/malformed self-report never blocks the gate because the diff is the source of truth. Lie-detection: when claimed_changes != the diff's file set, a warning is recorded — it is NOT a gate failure. Design: docs/architecture/17_EXTERNAL_AGENT_DELEGATION.md.",
+  "type": "object",
+  "required": ["cli", "driver", "diff", "stop_reason", "tokens", "self_report_source", "warnings"],
+  "properties": {
+    "cli": {
+      "enum": ["claude", "codex", "gemini"],
+      "description": "Which external CLI produced the run."
+    },
+    "driver": {
+      "enum": ["headless", "acp"],
+      "description": "Which driver drove it. The result shape is identical for both."
+    },
+    "diff": {
+      "type": "string",
+      "description": "AUTHORITATIVE. git diff of the sandbox working tree vs the recorded pre-delegation tree. This — and only this — is what the exit gate enforces against the write-set."
+    },
+    "stop_reason": {
+      "enum": ["end_turn", "cancelled", "error", "unknown"],
+      "description": "Why the run ended."
+    },
+    "tokens": {
+      "type": "object",
+      "required": ["input", "output"],
+      "properties": {
+        "input": { "type": "number" },
+        "output": { "type": "number" }
+      },
+      "description": "Token usage for cost accounting."
+    },
+    "killed": {
+      "type": "boolean",
+      "description": "True if the entry gate killed the run (wall-clock/budget). Optional."
+    },
+    "kill_reason": {
+      "enum": ["wall_clock", "budget"],
+      "description": "Set only when killed is true."
+    },
+    "claimed_changes": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "ADVISORY self-report — file paths the agent CLAIMS it changed. Never gated. Used only for lie-detection vs the authoritative diff."
+    },
+    "agent_self_report": {
+      "type": "object",
+      "description": "ADVISORY — the agent's structured self-evaluation, for diagnosis only. Never gated. Acquired via native schema (Claude --json-schema / Codex --output-schema) or validated-on-receipt (Gemini); dropped if non-conforming.",
+      "additionalProperties": true
+    },
+    "self_report_source": {
+      "enum": ["native_schema", "validated_on_receipt", "dropped_nonconforming", "none"],
+      "description": "How the self-report was acquired/handled. native_schema = the CLI guaranteed our schema (Claude/Codex); validated_on_receipt = prompted + validated (Gemini); dropped_nonconforming = received but failed validation (flagged, not trusted); none = no self-report."
+    },
+    "warnings": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Non-fatal signals (e.g. lie-detection: claimed_changes != diff file set). Recorded for honesty signal; NEVER a gate failure."
+    }
+  }
+}

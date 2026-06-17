@@ -1,0 +1,9 @@
+{
+  "description": "Every documented `not implemented` stub MUST appear here with an owner that is a builder story id or a roadmap phase id. Enforced by stub_registry.test.ts.",
+  "valid_roadmap_owners": [
+    "ROADMAP:phase-1",
+    "ROADMAP:phase-2",
+    "ROADMAP:phase-3"
+  ],
+  "stubs": []
+}

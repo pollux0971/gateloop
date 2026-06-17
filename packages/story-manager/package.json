@@ -1,0 +1,16 @@
+{
+  "name": "@gateloop/story-manager",
+  "version": "0.1.0",
+  "description": "Admissibility gate between tracker and scheduler",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": { "test": "vitest run" },
+  "dependencies": {
+    "@gateloop/harness-core": "workspace:*",
+    "@gateloop/event-log": "workspace:*",
+    "@gateloop/task-graph": "workspace:*"
+  },
+  "devDependencies": { "vitest": "^2", "typescript": "^5" }
+}

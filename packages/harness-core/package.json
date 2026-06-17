@@ -1,0 +1,11 @@
+{
+  "name": "@gateloop/harness-core",
+  "version": "0.0.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@gateloop/settings": "workspace:*"
+  }
+}

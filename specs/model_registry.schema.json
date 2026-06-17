@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "model_registry.schema.json",
+  "title": "ModelRegistry",
+  "description": "STORY-032.6: model-centric registry (configs/models.yaml). Each entry is a self-named model with its own base_url + Secret Broker handle + optional pricing/limit. Agents route by the self-chosen name in model_routing.yaml. External CLI tools register with kind: cli (EPIC-033).",
+  "type": "object",
+  "required": ["models"],
+  "additionalProperties": true,
+  "properties": {
+    "version": { "type": "integer", "minimum": 1 },
+    "models": {
+      "type": "array",
+      "description": "The named models the operator registered.",
+      "items": {
+        "type": "object",
+        "required": ["name", "kind"],
+        "additionalProperties": true,
+        "properties": {
+          "name": { "type": "string", "minLength": 1, "description": "Operator's own label, e.g. 'my-cheap-coder'. Agents route by this." },
+          "kind": {
+            "enum": ["openai", "openai_responses_codex", "anthropic", "cli"],
+            "description": "Adapter kind. cli = external CLI tool (EPIC-033)."
+          },
+          "base_url": { "type": "string", "description": "Endpoint base URL (auto-filled per kind, or manual). Not required for kind: cli." },
+          "secret_handle": { "type": "string", "description": "Secret Broker handle for the credential — never the value itself." },
+          "pricing": {
+            "type": "object",
+            "description": "ALL optional. $ / 1M tokens. Absent → cost reported as 'unknown' (tokens still counted).",
+            "additionalProperties": false,
+            "properties": {
+              "input": { "type": "number", "minimum": 0 },
+              "output": { "type": "number", "minimum": 0 },
+              "cache_input": { "type": "number", "minimum": 0 }
+            }
+          },
+          "limit": { "type": "number", "minimum": 0, "description": "Rate limit (req/min) — optional, feeds scheduling, not cost." },
+          "cli": {
+            "type": "object",
+            "description": "Present only when kind = cli (external CLI tool, EPIC-033).",
+            "required": ["driver", "command"],
+            "additionalProperties": false,
+            "properties": {
+              "driver": { "enum": ["headless", "acp"] },
+              "command": { "type": "string" },
+              "args": { "type": "array", "items": { "type": "string" } }
+            }
+          }
+        }
+      }
+    }
+  }
+}

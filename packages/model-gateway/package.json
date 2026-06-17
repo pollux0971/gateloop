@@ -1,0 +1,15 @@
+{
+  "name": "@gateloop/model-gateway",
+  "version": "0.0.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@gateloop/agent-output": "workspace:*",
+    "@gateloop/settings": "workspace:*"
+  },
+  "devDependencies": {
+    "yaml": "^2.7.0"
+  }
+}

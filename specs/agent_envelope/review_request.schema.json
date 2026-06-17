@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "agent_envelope/review_request.schema.json",
+  "title": "ReviewRequest",
+  "description": "STORY-032.1: the envelope sent to the Reviewer (EPIC-022). Carries the failing output, acceptance, diff, and gene signals — never any implementation history or agent reasoning (anti-anchoring).",
+  "type": "object",
+  "required": ["story_id", "failing_test_output", "acceptance_criteria", "diff_under_review", "matching_genes"],
+  "additionalProperties": true,
+  "properties": {
+    "story_id": { "type": "string", "description": "The story under review." },
+    "failing_test_output": { "type": "string", "description": "The failing test/validation output the Reviewer reasons from." },
+    "acceptance_criteria": { "type": "string", "description": "The acceptance the change is judged against." },
+    "diff_under_review": { "type": "string", "description": "The diff being reviewed (result, not the author's reasoning)." },
+    "matching_genes": {
+      "type": "array",
+      "description": "Failure-bank gene signals informing the review.",
+      "items": {
+        "type": "object",
+        "required": ["matching_signal", "summary"],
+        "additionalProperties": true,
+        "properties": {
+          "matching_signal": { "type": "string" },
+          "summary": { "type": "string" }
+        }
+      }
+    }
+  }
+}

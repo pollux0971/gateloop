@@ -1,0 +1,21 @@
+{
+  "name": "@gateloop/reviewer-runtime",
+  "version": "0.1.0",
+  "description": "Reviewer agent runtime — read-only advisory leaf",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@gateloop/validator-suite": "workspace:*",
+    "@gateloop/event-log": "workspace:*",
+    "@gateloop/failure-bank": "workspace:*"
+  },
+  "devDependencies": {
+    "vitest": "^2",
+    "typescript": "^5"
+  }
+}

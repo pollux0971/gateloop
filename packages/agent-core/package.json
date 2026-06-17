@@ -1,0 +1,12 @@
+{
+  "name": "@gateloop/agent-core",
+  "version": "0.0.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@gateloop/model-gateway": "workspace:*",
+    "@gateloop/agent-output": "workspace:*"
+  }
+}

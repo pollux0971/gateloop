@@ -1,0 +1,93 @@
+# Per-agent / per-task model routing.
+# STORY-032.6: agents route by the SELF-CHOSEN MODEL NAME from configs/models.yaml
+# (model-centric), no longer by a provider/model string. The gateway resolves the
+# name to a model entry (base_url + secret handle + pricing) and instantiates the
+# adapter only when real_api_calls.enabled. Every name here must exist in models.yaml.
+version: 2
+
+defaults:
+  fallback_on: [rate_limit, provider_error, context_length_exceeded, timeout, oauth_expired]
+  pin_snapshots: true
+  record_usage: true
+  # Codex subscription shares rate limits with ChatGPT web and is personal-use;
+  # under heavy autonomous load it WILL throttle, so a paid third-party fallback
+  # keeps long /goal runs moving.
+
+# ── STORY-029.8 live A/B split (human-gated) ─────────────────────────────────
+# Judgement roles → openai/gpt-5.4-mini (small output). Code-producing roles →
+# deepseek/deepseek-v4-flash (cheapest). Reviewer deliberately runs on a DIFFERENT
+# model than Developer so anti-anchoring is REAL, not vacuous. Every fallback is []
+# so a provider error fails CLOSED — clean cost attribution, no silent provider swap.
+agents:
+  planning_steward:
+    primary:   gpt-5.4-mini
+    fallbacks: []
+  supervisor:
+    primary:   gpt-5.4-mini
+    fallbacks: []
+  reviewer:
+    primary:   gpt-5.4-mini       # ≠ developer model → genuine anti-anchoring (performed well in run 1)
+    fallbacks: []
+  assessor:
+    primary:   gpt-5.4-mini       # STORY-030.8: assessment role → strong tier; ≠ developer model (cross-model judging)
+    fallbacks: []
+  developer:
+    primary:   deepseek-v4-pro    # run 2: upgraded from -flash (flash failed its own tests + debug didn't converge)
+    fallbacks: []
+  debugger:
+    primary:   deepseek-v4-pro    # run 2: upgraded from -flash
+    fallbacks: []
+
+# ── STORY-030.8: six-agent trust-class profile (generation vs assessment) ─────
+# The live runs proved a structural rule: a cheap model can GENERATE code (it has
+# downstream debug + review to catch errors), but ASSESSMENT — defining what is
+# correct, authoring acceptance tests, judging completion — must run on a strong,
+# isolated model, regardless of tier. This profile encodes that as the shipped
+# DEFAULT (not a gate change): assessment roles default to the strong tier,
+# generation roles may use a cheap tier, the Supervisor sits mid. Operators tune
+# cost via EPIC-021 settings without collapsing the generation/assessment split.
+# Rationale in full: docs/agents/05_AGENT_SKILL_CATALOG.md + 07_AGENT_REFACTOR_GENERATION_VS_ASSESSMENT.md.
+tiers:
+  strong: gpt-5.4-mini          # judgement / authoring the correctness bar
+  mid:    gpt-5.4-mini          # coordination
+  cheap:  deepseek-v4-pro       # code generation (downstream debug+review catch errors)
+trust_classes:
+  # assessment roles — author/judge the bar; must be strong AND isolated from the generator.
+  assessment:
+    tier:  strong
+    roles: [planning_steward, reviewer, assessor]
+  # coordination — routes and composes; mid tier.
+  coordination:
+    tier:  mid
+    roles: [supervisor]
+  # generation roles — write code; a cheap tier is acceptable.
+  generation:
+    tier:  cheap
+    roles: [developer, debugger]
+  # INVARIANT: the assessor must be cross-model from the developer (enforced in
+  # assessor-runtime). Here that holds: assessor=strong (openai) ≠ developer=cheap (deepseek).
+
+# Trivial work shouldn't burn the strong tier — keep genuinely trivial task classes
+# on cheap -flash. (The eval's developer runs task_class=patch_generation, NOT
+# 'patch', so it uses the -pro primary above; these overrides do not affect it.)
+task_overrides:
+  patch:
+    developer: deepseek-v4-flash
+  research_spike:
+    developer: deepseek-v4-flash
+
+# Internal harness jobs (not agent reasoning) — keep off the subscription.
+harness_jobs:
+  context_compaction: deepseek-v4-flash
+  trace_summary:      deepseek-v4-flash
+
+# STORY-021.3: budget values now derived from settings.budget via budgetConfigFromSettings().
+# These YAML fields are kept as documentation of the defaults; the gateway reads from settings.
+budgets:
+  per_story_token_cap: 400000    # default; overridden by settings.budget.max_tokens_per_story
+  per_run_token_cap: 4000000     # informational; not yet wired to RunBudgetPool
+  on_exceed: escalate_human
+
+tier_upgrade_policy:
+  upgrade_after_n_failures: 2   # consecutive validation failures before tier upgrade
+  hard_gene_starts_strong: true # known hard signatures → start at strong tier immediately

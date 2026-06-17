@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "handoff_card.schema.json",
+  "title": "HandoffCard",
+  "description": "STORY-031.1: the facts-only inheritance unit emitted when a story completes. The next story inherits the card, NOT the previous story's context. The card deliberately omits the Developer's reasoning, the debug narrative, and any 'how we got there' — carrying those across stories would anchor the next story to the previous one's framing (the contamination EPIC-030 removed within a story, prevented here between stories). Facts and a pointer only; the full process lives in the trace, reachable via trace_ref.",
+  "type": "object",
+  "required": ["story", "delivered", "touched_files", "acceptance", "open_threads", "trace_ref"],
+  "additionalProperties": false,
+  "properties": {
+    "story": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The completed story's id."
+    },
+    "delivered": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Capabilities delivered, stated as facts (e.g. cli_entry, core_service) — never how they were built."
+    },
+    "touched_files": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Files used/changed — 'which files', not the diff narrative."
+    },
+    "acceptance": {
+      "type": "object",
+      "required": ["result"],
+      "additionalProperties": false,
+      "properties": {
+        "result": { "enum": ["passed", "failed", "partial"] },
+        "ratio": { "type": "string", "description": "e.g. \"7/7\"" }
+      }
+    },
+    "open_threads": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Unfinished functionality the next story may pick up — facts, not reasoning."
+    },
+    "trace_ref": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Pointer back to the full process in the trace (e.g. trace#evt_4821). The card stays tiny; detail is reachable, not resident."
+    }
+  }
+}

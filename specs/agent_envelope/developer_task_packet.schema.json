@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "agent_envelope/developer_task_packet.schema.json",
+  "title": "DeveloperTaskPacket",
+  "description": "STORY-032.1: the envelope the Supervisor composes (029.2) and sends to the Developer. Validated on compose and on receive. Facts and scope only — never another agent's reasoning.",
+  "type": "object",
+  "required": [
+    "packet_id", "story_id", "story_contract_ref", "target_agent", "task_title",
+    "task_goal", "task_details", "allowed_write_set", "forbidden_actions",
+    "required_files", "validation_commands", "acceptance_criteria",
+    "rollback_requirement", "context_packet", "output_required"
+  ],
+  "additionalProperties": true,
+  "properties": {
+    "packet_id": { "type": "string", "description": "Unique id of this task packet." },
+    "story_id": { "type": "string", "description": "The story this packet implements." },
+    "story_contract_ref": { "type": "string", "description": "Pointer to the story contract this packet renders." },
+    "contract_version": { "type": "number", "description": "Version of the story contract (optional)." },
+    "target_agent": { "const": "developer", "description": "Recipient agent role — always 'developer'." },
+    "task_title": { "type": "string", "description": "Short human-readable title of the task." },
+    "task_goal": { "type": "string", "description": "The objective: what 'done' means for this packet." },
+    "task_details": {
+      "type": "object",
+      "description": "Background and behavioral expectations (no reasoning carried).",
+      "required": ["background", "expected_behavior", "non_goals"],
+      "additionalProperties": true,
+      "properties": {
+        "background": { "type": "string", "description": "Context prose, incl. failure-bank AVOID warnings." },
+        "expected_behavior": { "type": "array", "items": { "type": "string" }, "description": "Behaviors the implementation must exhibit." },
+        "non_goals": { "type": "array", "items": { "type": "string" }, "description": "Explicitly out of scope." }
+      }
+    },
+    "allowed_write_set": { "type": "array", "items": { "type": "string" }, "description": "The ONLY paths the Developer may write — enforced before apply." },
+    "forbidden_actions": { "type": "array", "items": { "type": "string" }, "description": "Hard prohibitions (secrets, sudo, weakening tests, out-of-write-set)." },
+    "required_files": {
+      "type": "object",
+      "description": "Files to create/update and do-not-touch guardrails.",
+      "required": ["create", "update", "do_not_touch"],
+      "additionalProperties": true,
+      "properties": {
+        "create": { "type": "array", "items": { "type": "string" } },
+        "update": { "type": "array", "items": { "type": "string" } },
+        "do_not_touch": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "validation_commands": { "type": "array", "items": { "type": "string" }, "description": "Commands the Validator runs to judge pass/fail." },
+    "acceptance_criteria": { "type": "array", "items": { "type": "string" }, "description": "Testable behaviors that define completion (authored by Planning/Assessor, NOT the Developer)." },
+    "rollback_requirement": {
+      "type": "object",
+      "description": "Every patch must be reversible.",
+      "required": ["required", "expected_content"],
+      "additionalProperties": true,
+      "properties": {
+        "required": { "type": "boolean" },
+        "expected_content": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "context_packet": {
+      "type": "object",
+      "description": "Refs to include and patterns to exclude from context (no raw transcripts).",
+      "required": ["include_refs", "exclude_patterns"],
+      "additionalProperties": true,
+      "properties": {
+        "include_refs": { "type": "array", "items": { "type": "string" } },
+        "exclude_patterns": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "output_required": { "type": "array", "items": { "type": "string" }, "description": "Artifacts the Developer turn must return (patch proposal, tests, rollback notes…)." }
+  }
+}

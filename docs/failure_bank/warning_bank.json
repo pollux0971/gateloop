@@ -1,0 +1,6 @@
+{
+  "$schema": "../../specs/failure_gene.schema.json",
+  "schema_version": "failure_bank/v1",
+  "updated_at": "",
+  "bank": []
+}

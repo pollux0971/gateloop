@@ -1,0 +1,69 @@
+# Model-centric registry (STORY-032.6 — replaces the provider-centric providers.yaml).
+# Each entry is a SELF-NAMED model with its own properties: kind, base_url, a Secret
+# Broker handle (never the credential itself), and OPTIONAL pricing/limit. Agents
+# route by the self-chosen `name` (see model_routing.yaml), not by a provider/model
+# string. External CLI tools register here too with kind: cli (see EPIC-033).
+# Cost is computed live from per-model pricing; a model with no pricing still counts
+# tokens but reports cost as "unknown" rather than guessing.
+version: 1
+
+models:
+  # ---- judgement / assessment tier (strong, cross-model from the cheap coder) ----
+  - name: gpt-5.4-mini
+    kind: openai
+    base_url: https://api.openai.com/v1
+    secret_handle: provider.openai.default
+    pricing: { input: 0.75, output: 4.50 }      # $ / 1M tokens
+    limit: 500                                   # req/min — feeds rate-limit scheduling, not cost
+
+  # ---- code generation tier (cheap; downstream debug + review catch errors) ----
+  - name: deepseek-v4-pro
+    kind: openai                                  # OpenAI-compatible endpoint
+    base_url: https://api.deepseek.com
+    secret_handle: provider.deepseek.default
+    pricing: { input: 0.435, output: 0.87 }
+
+  - name: deepseek-v4-flash
+    kind: openai
+    base_url: https://api.deepseek.com
+    secret_handle: provider.deepseek.default
+    pricing: { input: 0.14, output: 0.28 }
+
+  # ---- Codex via ChatGPT subscription (OAuth) — no per-token pricing ----
+  - name: codex-subscription
+    kind: openai_responses_codex
+    base_url: https://chatgpt.com/backend-api/codex/responses
+    secret_handle: provider.codex.oauth
+    # no `pricing` → billed against the subscription; per-token cost is "unknown"
+    # (tokens are still counted; the gateway never guesses a price).
+
+  # ---- External CLI tools (kind: cli) — EPIC-033 headless delegation ----
+  # These carry a command + args + a Secret Broker handle INSTEAD of a base_url. An
+  # agent role routes to them by name like any model; the harness runs them headless
+  # inside the hardened delegation sandbox and gates their git diff on the way out.
+  # Auth env var is derived from the command (claude→ANTHROPIC_API_KEY,
+  # codex→CODEX_HOME, gemini→GEMINI_API_KEY); the broker fills it at launch. Verified
+  # flags: external_references/EPIC-033_SPIKE_HEADLESS_ACP_FINDINGS.md.
+  - name: claude-code-cli
+    kind: cli
+    secret_handle: provider.anthropic.cli
+    cli:
+      driver: headless
+      command: claude
+      args: ["--print", "--bare", "--output-format", "stream-json", "--permission-mode", "bypassPermissions"]
+
+  - name: codex-cli
+    kind: cli
+    secret_handle: provider.codex.oauth
+    cli:
+      driver: headless
+      command: codex
+      args: ["exec", "--json", "--ephemeral", "--skip-git-repo-check"]
+
+  - name: gemini-cli
+    kind: cli
+    secret_handle: provider.google.cli
+    cli:
+      driver: headless
+      command: gemini
+      args: ["--output-format", "stream-json", "--yolo"]

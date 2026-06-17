@@ -1,0 +1,38 @@
+default:
+  rootless: true
+  network: none
+  read_only_root: true
+  cap_drop: [ALL]
+  no_new_privileges: true
+  host_docker_socket: false
+  cpus: 2
+  memory: 4g
+  timeout_seconds: 600
+
+# EPIC-033 external-agent delegation sandbox (STORY-033.3).
+# Same hardening as `default`, but the external agent is allowed to reach package
+# registries ONLY (so it can `npm install` / `pip install`) — never secrets or
+# external APIs. The repo is provided as a READ-ONLY copy the agent edits in place;
+# the sandbox is ephemeral and isolated from every other sandbox.
+delegation:
+  rootless: true
+  # Network is default-DENY; only the registry allowlist below is reachable. The
+  # container engine sees `bridge` but an egress allowlist filter enforces the policy.
+  network: bridge
+  network_policy:
+    default_action: deny
+    allow_registries:
+      - registry.npmjs.org
+      - registry.yarnpkg.com
+      - pypi.org
+      - files.pythonhosted.org
+  read_only_root: true        # the agent's own root FS is read-only…
+  read_only_repo_copy: true   # …and the repo is a disposable COPY, source never mutated
+  ephemeral: true             # torn down after the delegation; no persistence
+  isolated: true              # no shared mounts with the host or other sandboxes
+  cap_drop: [ALL]
+  no_new_privileges: true
+  host_docker_socket: false
+  cpus: 2
+  memory: 4g
+  timeout_seconds: 600

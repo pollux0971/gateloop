@@ -1,0 +1,13 @@
+{
+  "name": "@gateloop/debugger-runtime",
+  "version": "0.0.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@gateloop/validator-suite": "workspace:*",
+    "@gateloop/agent-core": "workspace:*",
+    "@gateloop/model-gateway": "workspace:*"
+  }
+}

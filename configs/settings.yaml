@@ -1,0 +1,24 @@
+# Operator overrides on top of settings.default.yaml.
+# Only keys present here override the defaults.
+
+model:
+  real_provider_scope: hybrid   # 2026-06-14: enable real provider calls (OpenAI key validated)
+
+# ── STORY-029.8 live A/B run: budget hard caps (the $5 ceiling) ───────────────
+# per-story cap unchanged at 400k; the run-level token cap is the dollar guardrail.
+# The live eval harness reads max_tokens_per_run and engages a kill switch the
+# instant cumulative REAL usage crosses it — superseding any per-story accounting.
+budget:
+  max_tokens_per_story: 400000      # per_story_token_cap
+  max_tokens_per_run:   1500000     # per_run_token_cap — hard kill switch (≈ $5 ceiling)
+  max_calls_per_story:  60
+  max_calls_per_run:    400
+
+# ── STORY-029.8: formalize the Reviewer stage as a genuine anti-anchoring gate ─
+# cross_model=true makes the non-vacuity explicit: Reviewer runs on a DIFFERENT
+# model (gpt-5.4-mini) than the Developer (deepseek-v4-flash). trigger documents
+# that a review diagnosis is produced once the cognition cycle completes.
+review:
+  cross_model: true
+  trigger: on_cycle_complete
+  max_directions: 3

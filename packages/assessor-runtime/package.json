@@ -1,0 +1,16 @@
+{
+  "name": "@gateloop/assessor-runtime",
+  "version": "0.1.0",
+  "description": "Assessor agent runtime — authors acceptance tests from intent, runs them, judges satisfaction. Isolated from the Developer.",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "vitest": "^2",
+    "typescript": "^5"
+  }
+}

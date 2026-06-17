@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "agent_envelope/debugger_task_packet.schema.json",
+  "title": "DebuggerTaskPacket",
+  "description": "STORY-032.1: the envelope the Supervisor composes (029.4) and sends to the Debugger on failure. The Debugger diagnoses from the broken result + acceptance + diff; it never receives the Developer's reasoning (fresh-context, EPIC-030/031).",
+  "type": "object",
+  "required": [
+    "packet_id", "story_id", "story_contract_ref", "target_agent", "debug_goal",
+    "investigation_only", "failure_context", "allowed_repair_scope",
+    "forbidden_actions", "required_analysis", "failure_gene",
+    "acceptance_that_failed", "do_not_touch", "context_packet", "output_required"
+  ],
+  "additionalProperties": true,
+  "properties": {
+    "packet_id": { "type": "string", "description": "Unique id of this debug packet." },
+    "story_id": { "type": "string", "description": "The story under repair." },
+    "story_contract_ref": { "type": "string", "description": "Pointer to the story contract." },
+    "contract_version": { "type": "number", "description": "Story contract version (optional)." },
+    "target_agent": { "const": "debugger", "description": "Recipient agent role — always 'debugger'." },
+    "debug_goal": { "type": "string", "description": "What the repair must achieve (re-satisfy the failed acceptance)." },
+    "investigation_only": { "type": "boolean", "description": "True when the Debugger may only investigate, not repair." },
+    "failure_context": {
+      "type": "object",
+      "description": "The broken result: command, signature, logs ref, changed files (no Developer reasoning).",
+      "required": ["changed_files"],
+      "additionalProperties": true,
+      "properties": {
+        "validation_report_ref": { "type": "string" },
+        "failed_command": { "type": "string" },
+        "failure_signature": { "type": "string" },
+        "failed_logs_ref": { "type": "string" },
+        "changed_files": { "type": "array", "items": { "type": "string" } },
+        "current_patch_ref": { "type": "string" }
+      }
+    },
+    "allowed_repair_scope": { "type": "array", "items": { "type": "string" }, "description": "The hard bound — nothing may be touched outside it; scope is never widened." },
+    "forbidden_actions": { "type": "array", "items": { "type": "string" }, "description": "Hard prohibitions." },
+    "required_analysis": { "type": "array", "items": { "type": "string" }, "description": "Diagnosis steps the Debugger must perform." },
+    "failure_gene": {
+      "type": ["object", "null"],
+      "description": "The operative AVOID gene, or null for a fresh failure.",
+      "additionalProperties": true,
+      "properties": {
+        "matching_signal": { "type": "string" },
+        "avoid": { "type": "string" },
+        "consolidated_count": { "type": "number" }
+      }
+    },
+    "acceptance_that_failed": { "type": "array", "items": { "type": "string" }, "description": "The acceptance criteria the Debugger must re-satisfy." },
+    "do_not_touch": { "type": "array", "items": { "type": "string" }, "description": "Explicit do-not-touch guardrails beyond the repair scope." },
+    "context_packet": {
+      "type": "object",
+      "required": ["include_refs", "exclude_patterns"],
+      "additionalProperties": true,
+      "properties": {
+        "include_refs": { "type": "array", "items": { "type": "string" } },
+        "exclude_patterns": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "output_required": { "type": "array", "items": { "type": "string" }, "description": "Artifacts the Debugger turn must return (repair proposal, failure gene…)." }
+  }
+}

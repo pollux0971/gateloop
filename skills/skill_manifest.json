@@ -1,0 +1,1063 @@
+{
+  "schema_version": "skill_manifest/v2",
+  "note": "Existing skills predate the test-gate; they are 'needs_tests' until tests/ are backfilled and they pass the lifecycle gate (see docs/workflows/08_SKILL_LIFECYCLE_RUNTIME_WORKFLOW.md). | planning-steward PM/Architect/SM skills adapted from BMAD-METHOD (MIT). | Machine-facing program-spec suite (7 skills) registered; see skills/planning-steward/SPEC_SUITE.md.",
+  "lifecycle_defaults": {
+    "register_pass_rate": 1.0,
+    "robustness_runs": 5,
+    "quarantine_below": 0.8,
+    "iteration_budget": 3
+  },
+  "skills": [
+    {
+      "skill_id": "planning-steward.idea-to-epic",
+      "agent_role": "planning_steward",
+      "path": "skills/planning-steward/idea-to-epic",
+      "status": "registered",
+      "tests": "skills/planning-steward/idea-to-epic/tests",
+      "last_evaluation": {
+        "passed": 5,
+        "total": 5,
+        "fresh_runs": 1,
+        "pass_rate": 1.0,
+        "at": "2026-06-12T09:41:17.688075Z"
+      },
+      "leakage_audit": "unrun"
+    },
+    {
+      "skill_id": "supervisor.story-contract",
+      "agent_role": "supervisor",
+      "path": "skills/supervisor/story-contract",
+      "status": "registered",
+      "tests": "skills/supervisor/story-contract/tests",
+      "last_evaluation": {
+        "passed": 5,
+        "total": 5,
+        "fresh_runs": 1,
+        "pass_rate": 1.0,
+        "at": "2026-06-12T09:41:17.858567Z"
+      },
+      "leakage_audit": "unrun"
+    },
+    {
+      "skill_id": "developer.patch-proposal",
+      "agent_role": "developer",
+      "path": "skills/developer/patch-proposal",
+      "status": "registered",
+      "tests": "skills/developer/patch-proposal/tests",
+      "last_evaluation": {
+        "passed": 5,
+        "total": 5,
+        "fresh_runs": 1,
+        "pass_rate": 1.0,
+        "at": "2026-06-12T09:41:18.024658Z"
+      },
+      "leakage_audit": "unrun"
+    },
+    {
+      "skill_id": "debugger.failure-triage",
+      "agent_role": "debugger",
+      "path": "skills/debugger/failure-triage",
+      "status": "registered",
+      "tests": "skills/debugger/failure-triage/tests",
+      "last_evaluation": {
+        "passed": 6,
+        "total": 6,
+        "fresh_runs": 1,
+        "pass_rate": 1.0,
+        "at": "2026-06-12T09:41:18.188034Z"
+      },
+      "leakage_audit": "unrun"
+    },
+    {
+      "skill_id": "shared.example-skill",
+      "agent_role": "shared",
+      "path": "skills/_TEMPLATE",
+      "status": "quarantined",
+      "tests": "skills/_TEMPLATE/tests",
+      "last_evaluation": {
+        "passed": 0,
+        "total": 0,
+        "fresh_runs": 1,
+        "pass_rate": 0.0,
+        "at": "2026-06-12T09:41:18.188074Z"
+      },
+      "leakage_audit": "unrun"
+    },
+    {
+      "skill_id": "planning-steward.prd-authoring",
+      "agent_role": "planning_steward",
+      "path": "skills/planning-steward/prd-authoring",
+      "status": "registered",
+      "tests": "skills/planning-steward/prd-authoring/tests",
+      "last_evaluation": {
+        "passed": 4,
+        "total": 4,
+        "fresh_runs": 1,
+        "pass_rate": 1.0,
+        "at": "2026-06-12T09:41:18.352854Z"
+      },
+      "leakage_audit": "unrun"
+    },
+    {
+      "skill_id": "planning-steward.architecture-design",
+      "agent_role": "planning_steward",
+      "path": "skills/planning-steward/architecture-design",
+      "status": "registered",
+      "tests": "skills/planning-steward/architecture-design/tests",
+      "last_evaluation": {
+        "passed": 4,
+        "total": 4,
+        "fresh_runs": 1,
+        "pass_rate": 1.0,
+        "at": "2026-06-12T09:41:18.517005Z"
+      },
+      "leakage_audit": "unrun"
+    },
+    {
+      "skill_id": "planning-steward.epic-story-sharding",
+      "agent_role": "planning_steward",
+      "path": "skills/planning-steward/epic-story-sharding",
+      "status": "registered",
+      "tests": "skills/planning-steward/epic-story-sharding/tests",
+      "last_evaluation": {
+        "passed": 4,
+        "total": 4,
+        "fresh_runs": 1,
+        "pass_rate": 1.0,
+        "at": "2026-06-12T09:41:18.677948Z"
+      },
+      "leakage_audit": "unrun"
+    },
+    {
+      "skill_id": "planning-steward.machine-checkable-acceptance",
+      "agent_role": "planning_steward",
+      "path": "skills/planning-steward/machine-checkable-acceptance",
+      "status": "registered",
+      "tests": "skills/planning-steward/machine-checkable-acceptance/tests",
+      "last_evaluation": {
+        "passed": 4,
+        "total": 4,
+        "fresh_runs": 1,
+        "pass_rate": 1.0,
+        "at": "2026-06-12T09:41:18.842773Z"
+      },
+      "leakage_audit": "unrun"
+    },
+    {
+      "skill_id": "planning-steward.behavior-test-derivation",
+      "agent_role": "planning_steward",
+      "path": "skills/planning-steward/behavior-test-derivation",
+      "status": "registered",
+      "tests": "skills/planning-steward/behavior-test-derivation/tests",
+      "last_evaluation": {
+        "passed": 3,
+        "total": 3,
+        "fresh_runs": 1,
+        "pass_rate": 1.0,
+        "at": "2026-06-12T09:41:19.012624Z"
+      },
+      "leakage_audit": "unrun"
+    },
+    {
+      "skill_id": "planning-steward.acceptance-test-scaffold",
+      "agent_role": "planning_steward",
+      "path": "skills/planning-steward/acceptance-test-scaffold",
+      "status": "registered",
+      "tests": "skills/planning-steward/acceptance-test-scaffold/tests",
+      "last_evaluation": {
+        "passed": 5,
+        "total": 5,
+        "fresh_runs": 1,
+        "pass_rate": 1.0,
+        "at": "2026-06-12T09:41:19.179233Z"
+      },
+      "leakage_audit": "unrun"
+    },
+    {
+      "skill_id": "planning-steward.interface-contract-spec",
+      "agent_role": "planning_steward",
+      "path": "skills/planning-steward/interface-contract-spec",
+      "status": "registered",
+      "tests": "skills/planning-steward/interface-contract-spec/tests",
+      "last_evaluation": {
+        "passed": 4,
+        "total": 4,
+        "fresh_runs": 1,
+        "pass_rate": 1.0,
+        "at": "2026-06-12T09:41:19.345671Z"
+      },
+      "leakage_audit": "unrun"
+    },
+    {
+      "skill_id": "planning-steward.write-set-and-guards",
+      "agent_role": "planning_steward",
+      "path": "skills/planning-steward/write-set-and-guards",
+      "status": "registered",
+      "tests": "skills/planning-steward/write-set-and-guards/tests",
+      "last_evaluation": {
+        "passed": 6,
+        "total": 6,
+        "fresh_runs": 1,
+        "pass_rate": 1.0,
+        "at": "2026-06-12T09:41:19.510928Z"
+      },
+      "leakage_audit": "unrun"
+    },
+    {
+      "skill_id": "planning-steward.documented-stub-registry",
+      "agent_role": "planning_steward",
+      "path": "skills/planning-steward/documented-stub-registry",
+      "status": "registered",
+      "tests": "skills/planning-steward/documented-stub-registry/tests",
+      "last_evaluation": {
+        "passed": 4,
+        "total": 4,
+        "fresh_runs": 1,
+        "pass_rate": 1.0,
+        "at": "2026-06-12T09:41:19.673066Z"
+      },
+      "leakage_audit": "unrun"
+    },
+    {
+      "skill_id": "planning-steward.program-spec-assembly",
+      "agent_role": "planning_steward",
+      "path": "skills/planning-steward/program-spec-assembly",
+      "status": "registered",
+      "tests": "skills/planning-steward/program-spec-assembly/tests",
+      "last_evaluation": {
+        "passed": 5,
+        "total": 5,
+        "fresh_runs": 1,
+        "pass_rate": 1.0,
+        "at": "2026-06-12T09:41:19.836447Z"
+      },
+      "leakage_audit": "unrun"
+    },
+    {
+      "skill_id": "shared.task-decomposition",
+      "agent_role": "shared",
+      "path": "skills/shared/task-decomposition",
+      "status": "registered",
+      "tests": "skills/shared/task-decomposition/tests",
+      "last_evaluation": {
+        "passed": 6,
+        "total": 6,
+        "fresh_runs": 1,
+        "pass_rate": 1.0,
+        "at": "2026-06-12T09:41:20.001235Z"
+      },
+      "leakage_audit": "unrun"
+    },
+    {
+      "skill_id": "developer.spec-conformance",
+      "agent_role": "developer",
+      "path": "skills/developer/spec-conformance",
+      "status": "registered",
+      "tests": "skills/developer/spec-conformance/tests",
+      "last_evaluation": {
+        "passed": 4,
+        "total": 4,
+        "fresh_runs": 1,
+        "pass_rate": 1.0,
+        "at": "2026-06-12T09:41:20.159493Z"
+      },
+      "leakage_audit": "unrun"
+    },
+    {
+      "skill_id": "developer.pre-flight-check",
+      "agent_role": "developer",
+      "path": "skills/developer/pre-flight-check",
+      "status": "registered",
+      "tests": "skills/developer/pre-flight-check/tests",
+      "last_evaluation": {
+        "passed": 6,
+        "total": 6,
+        "fresh_runs": 1,
+        "pass_rate": 1.0,
+        "at": "2026-06-12T09:41:20.322403Z"
+      },
+      "leakage_audit": "unrun"
+    },
+    {
+      "skill_id": "shared.structured-escalation",
+      "agent_role": "shared",
+      "path": "skills/shared/structured-escalation",
+      "status": "registered",
+      "tests": "skills/shared/structured-escalation/tests",
+      "last_evaluation": {
+        "passed": 5,
+        "total": 5,
+        "fresh_runs": 1,
+        "pass_rate": 1.0,
+        "at": "2026-06-12T09:41:20.488270Z"
+      },
+      "leakage_audit": "unrun"
+    },
+    {
+      "skill_id": "supervisor.task-packet-composition",
+      "agent_role": "supervisor",
+      "description": "Given a StoryContract, assemble the role-scoped TaskPacket for Developer or Debugger \u2014 correct target_agent, bounded context, write-set, acceptance, and attempt budget.",
+      "version": "0.1.0",
+      "status": "registered",
+      "entry_documents": [
+        "SKILL.md"
+      ],
+      "scripts": [
+        "scripts/evaluate.py"
+      ],
+      "tests": [
+        "tests/test_skill.py"
+      ],
+      "validation": [
+        "pytest -q tests/"
+      ],
+      "memory_file": ".memory.md",
+      "depends_on": [
+        "supervisor.story-contract"
+      ],
+      "enhances": [],
+      "provenance": {
+        "source_story": "STORY-014.3",
+        "source_trajectory": "",
+        "created_by": "harness"
+      },
+      "failure_signatures": [
+        "write-set|widened",
+        "bad|target_agent",
+        "missing|packet_id"
+      ],
+      "last_evaluation": {
+        "passed": 5,
+        "total": 5,
+        "fresh_runs": 1,
+        "pass_rate": 1.0,
+        "at": "2026-06-12T09:54:58.213389+00:00"
+      },
+      "leakage_audit": "unrun"
+    },
+    {
+      "skill_id": "supervisor.decision-matrix-routing",
+      "agent_role": "supervisor",
+      "description": "Apply decision_matrix.yaml rules: given harness state + story status + attempt counts, return exactly one action (develop / debug / escalate / checkpoint / stop).",
+      "version": "0.1.0",
+      "status": "registered",
+      "entry_documents": [
+        "SKILL.md"
+      ],
+      "scripts": [
+        "scripts/evaluate.py"
+      ],
+      "tests": [
+        "tests/test_skill.py"
+      ],
+      "validation": [
+        "pytest -q tests/"
+      ],
+      "memory_file": ".memory.md",
+      "depends_on": [
+        "supervisor.story-contract"
+      ],
+      "enhances": [],
+      "provenance": {
+        "source_story": "STORY-014.3",
+        "source_trajectory": "",
+        "created_by": "harness"
+      },
+      "failure_signatures": [
+        "bad|state",
+        "budget|exhausted|not|escalate",
+        "validation|passed|route_debugger"
+      ],
+      "last_evaluation": {
+        "passed": 5,
+        "total": 5,
+        "fresh_runs": 1,
+        "pass_rate": 1.0,
+        "at": "2026-06-12T09:54:58.383883+00:00"
+      },
+      "leakage_audit": "unrun"
+    },
+    {
+      "skill_id": "supervisor.parallel-set-selection",
+      "agent_role": "supervisor",
+      "description": "Identify safe parallel sets from candidate stories \u2014 only parallel_safe stories with non-overlapping write-sets enter the parallel set.",
+      "version": "0.1.0",
+      "status": "registered",
+      "entry_documents": [
+        "SKILL.md"
+      ],
+      "scripts": [
+        "scripts/evaluate.py"
+      ],
+      "tests": [
+        "tests/test_skill.py"
+      ],
+      "validation": [
+        "pytest -q tests/"
+      ],
+      "memory_file": ".memory.md",
+      "depends_on": [
+        "supervisor.story-contract"
+      ],
+      "enhances": [],
+      "provenance": {
+        "source_story": "STORY-014.3",
+        "source_trajectory": "",
+        "created_by": "harness"
+      },
+      "failure_signatures": [
+        "write-set|overlap",
+        "sequential|in|parallel_set",
+        "unknown|story"
+      ],
+      "last_evaluation": {
+        "passed": 5,
+        "total": 5,
+        "fresh_runs": 1,
+        "pass_rate": 1.0,
+        "at": "2026-06-12T09:54:58.546695+00:00"
+      },
+      "leakage_audit": "unrun"
+    },
+    {
+      "skill_id": "supervisor.budget-governance",
+      "agent_role": "supervisor",
+      "description": "Track token/attempt budgets across a story run; determine when to halt (attempt budget), escalate (repeated failure signature), or continue.",
+      "version": "0.1.0",
+      "status": "registered",
+      "entry_documents": [
+        "SKILL.md"
+      ],
+      "scripts": [
+        "scripts/evaluate.py"
+      ],
+      "tests": [
+        "tests/test_skill.py"
+      ],
+      "validation": [
+        "pytest -q tests/"
+      ],
+      "memory_file": ".memory.md",
+      "depends_on": [
+        "supervisor.story-contract"
+      ],
+      "enhances": [],
+      "provenance": {
+        "source_story": "STORY-014.3",
+        "source_trajectory": "",
+        "created_by": "harness"
+      },
+      "failure_signatures": [
+        "budget|reached|continue",
+        "repeated|signature|continue",
+        "bad|verdict"
+      ],
+      "last_evaluation": {
+        "passed": 5,
+        "total": 5,
+        "fresh_runs": 1,
+        "pass_rate": 1.0,
+        "at": "2026-06-12T09:54:58.708973+00:00"
+      },
+      "leakage_audit": "unrun"
+    },
+    {
+      "skill_id": "supervisor.escalation-triage",
+      "agent_role": "supervisor",
+      "description": "Classify incoming escalations and decide: retry_with_guidance, human_gate, re_scope, or reject. Scope expansions always route to human_gate.",
+      "version": "0.1.0",
+      "status": "registered",
+      "entry_documents": [
+        "SKILL.md"
+      ],
+      "scripts": [
+        "scripts/evaluate.py"
+      ],
+      "tests": [
+        "tests/test_skill.py"
+      ],
+      "validation": [
+        "pytest -q tests/"
+      ],
+      "memory_file": ".memory.md",
+      "depends_on": [
+        "supervisor.story-contract"
+      ],
+      "enhances": [],
+      "provenance": {
+        "source_story": "STORY-014.3",
+        "source_trajectory": "",
+        "created_by": "harness"
+      },
+      "failure_signatures": [
+        "scope_expansion|not|human_gate",
+        "repeated_failure|retry|no|limit",
+        "missing|rationale"
+      ],
+      "last_evaluation": {
+        "passed": 5,
+        "total": 5,
+        "fresh_runs": 1,
+        "pass_rate": 1.0,
+        "at": "2026-06-12T09:54:58.874242+00:00"
+      },
+      "leakage_audit": "unrun"
+    },
+    {
+      "skill_id": "debugger.root-cause-analysis",
+      "agent_role": "debugger",
+      "description": "Bisect discipline for locating the true root cause via falsifiable hypothesis and one of five structured methods; never widens scope.",
+      "version": "0.1.0",
+      "status": "registered",
+      "entry_documents": [
+        "SKILL.md"
+      ],
+      "scripts": [
+        "scripts/evaluate.py"
+      ],
+      "tests": [
+        "tests/test_skill.py"
+      ],
+      "validation": [
+        "pytest -q tests/"
+      ],
+      "memory_file": ".memory.md",
+      "depends_on": [
+        "debugger.failure-triage"
+      ],
+      "enhances": [],
+      "provenance": {
+        "source_story": "STORY-014.4",
+        "source_trajectory": "",
+        "created_by": "harness"
+      },
+      "failure_signatures": [],
+      "last_evaluation": {
+        "passed": 5,
+        "total": 5,
+        "fresh_runs": 1,
+        "pass_rate": 1.0,
+        "at": "2026-06-12T10:09:17.945974Z"
+      },
+      "leakage_audit": "unrun"
+    },
+    {
+      "skill_id": "debugger.minimal-repair-pattern",
+      "agent_role": "debugger",
+      "description": "Apply the smallest reversible fix using one GRASP operator, one concern, within the existing write-set; never rewrites the feature or adds scope.",
+      "version": "0.1.0",
+      "status": "registered",
+      "entry_documents": [
+        "SKILL.md"
+      ],
+      "scripts": [
+        "scripts/evaluate.py"
+      ],
+      "tests": [
+        "tests/test_skill.py"
+      ],
+      "validation": [
+        "pytest -q tests/"
+      ],
+      "memory_file": ".memory.md",
+      "depends_on": [
+        "debugger.failure-triage"
+      ],
+      "enhances": [],
+      "provenance": {
+        "source_story": "STORY-014.4",
+        "source_trajectory": "",
+        "created_by": "harness"
+      },
+      "failure_signatures": [],
+      "last_evaluation": {
+        "passed": 5,
+        "total": 5,
+        "fresh_runs": 1,
+        "pass_rate": 1.0,
+        "at": "2026-06-12T10:09:18.119660Z"
+      },
+      "leakage_audit": "unrun"
+    },
+    {
+      "skill_id": "debugger.failure-gene-authoring",
+      "agent_role": "debugger",
+      "description": "Emit well-formed FailureGene objects with imperative avoid lines, pipe-separated matching signals, and consolidated_count increment on recurrence.",
+      "version": "0.1.0",
+      "status": "registered",
+      "entry_documents": [
+        "SKILL.md"
+      ],
+      "scripts": [
+        "scripts/evaluate.py"
+      ],
+      "tests": [
+        "tests/test_skill.py"
+      ],
+      "validation": [
+        "pytest -q tests/"
+      ],
+      "memory_file": ".memory.md",
+      "depends_on": [
+        "debugger.failure-triage"
+      ],
+      "enhances": [],
+      "provenance": {
+        "source_story": "STORY-014.4",
+        "source_trajectory": "",
+        "created_by": "harness"
+      },
+      "failure_signatures": [],
+      "last_evaluation": {
+        "passed": 5,
+        "total": 5,
+        "fresh_runs": 1,
+        "pass_rate": 1.0,
+        "at": "2026-06-12T10:09:18.282117Z"
+      },
+      "leakage_audit": "unrun"
+    },
+    {
+      "skill_id": "debugger.flaky-test-detection",
+      "agent_role": "debugger",
+      "description": "Discriminate real failures from flaky tests via 3-run re-run protocol; classify as real_failure, flaky, intermittent, or undetermined before any escalation.",
+      "version": "0.1.0",
+      "status": "registered",
+      "entry_documents": [
+        "SKILL.md"
+      ],
+      "scripts": [
+        "scripts/evaluate.py"
+      ],
+      "tests": [
+        "tests/test_skill.py"
+      ],
+      "validation": [
+        "pytest -q tests/"
+      ],
+      "memory_file": ".memory.md",
+      "depends_on": [
+        "debugger.failure-triage"
+      ],
+      "enhances": [],
+      "provenance": {
+        "source_story": "STORY-014.4",
+        "source_trajectory": "",
+        "created_by": "harness"
+      },
+      "failure_signatures": [],
+      "last_evaluation": {
+        "passed": 5,
+        "total": 5,
+        "fresh_runs": 1,
+        "pass_rate": 1.0,
+        "at": "2026-06-12T10:09:18.449923Z"
+      },
+      "leakage_audit": "unrun"
+    },
+    {
+      "skill_id": "developer.crud-web-app-template",
+      "agent_role": "developer",
+      "description": "Scaffold spec for a Vite+React CRUD web app \u2014 correct directory structure, build/test/typecheck commands, placeholder components, and the quality bar commands.",
+      "version": "0.1.0",
+      "status": "registered",
+      "entry_documents": [
+        "SKILL.md"
+      ],
+      "scripts": [
+        "scripts/evaluate.py"
+      ],
+      "tests": [
+        "tests/test_skill.py"
+      ],
+      "validation": [
+        "pytest -q tests/"
+      ],
+      "memory_file": ".memory.md",
+      "depends_on": [],
+      "enhances": [],
+      "provenance": {
+        "source_story": "STORY-014.5",
+        "source_trajectory": "",
+        "created_by": "harness"
+      },
+      "failure_signatures": [
+        "missing|vite-react",
+        "quality_bar_commands|missing",
+        "directories|missing"
+      ],
+      "last_evaluation": {
+        "passed": 6,
+        "total": 6,
+        "fresh_runs": 1,
+        "pass_rate": 1.0,
+        "at": "2026-06-12T10:14:36.924055Z"
+      },
+      "leakage_audit": "unrun"
+    },
+    {
+      "skill_id": "developer.rest-api-template",
+      "agent_role": "developer",
+      "description": "Scaffold spec for a Node/TS REST service \u2014 express or fastify, /health endpoint, build/test/typecheck quality bar.",
+      "version": "0.1.0",
+      "status": "registered",
+      "entry_documents": [
+        "SKILL.md"
+      ],
+      "scripts": [
+        "scripts/evaluate.py"
+      ],
+      "tests": [
+        "tests/test_skill.py"
+      ],
+      "validation": [
+        "pytest -q tests/"
+      ],
+      "memory_file": ".memory.md",
+      "depends_on": [],
+      "enhances": [],
+      "provenance": {
+        "source_story": "STORY-014.5",
+        "source_trajectory": "",
+        "created_by": "harness"
+      },
+      "failure_signatures": [
+        "missing|health|route",
+        "unsupported|framework",
+        "quality_bar_commands|missing"
+      ],
+      "last_evaluation": {
+        "passed": 6,
+        "total": 6,
+        "fresh_runs": 1,
+        "pass_rate": 1.0,
+        "at": "2026-06-12T10:14:37.096149Z"
+      },
+      "leakage_audit": "unrun"
+    },
+    {
+      "skill_id": "developer.cli-tool-template",
+      "agent_role": "developer",
+      "description": "Scaffold spec for a Node/TS CLI tool \u2014 commander or yargs, at least one subcommand, bin entry point, build/test/typecheck quality bar.",
+      "version": "0.1.0",
+      "status": "registered",
+      "entry_documents": [
+        "SKILL.md"
+      ],
+      "scripts": [
+        "scripts/evaluate.py"
+      ],
+      "tests": [
+        "tests/test_skill.py"
+      ],
+      "validation": [
+        "pytest -q tests/"
+      ],
+      "memory_file": ".memory.md",
+      "depends_on": [],
+      "enhances": [],
+      "provenance": {
+        "source_story": "STORY-014.5",
+        "source_trajectory": "",
+        "created_by": "harness"
+      },
+      "failure_signatures": [
+        "missing|subcommand",
+        "missing|bin_entry",
+        "bad|arg_parser"
+      ],
+      "last_evaluation": {
+        "passed": 6,
+        "total": 6,
+        "fresh_runs": 1,
+        "pass_rate": 1.0,
+        "at": "2026-06-12T10:14:37.257809Z"
+      },
+      "leakage_audit": "unrun"
+    },
+    {
+      "skill_id": "planning-steward.architecture-recovery",
+      "path": "skills/planning-steward/architecture-recovery",
+      "status": "needs_tests",
+      "version": "0.1.0",
+      "agent_role": "planning_steward",
+      "source_story": "STORY-020.6"
+    },
+    {
+      "skill_id": "planning-steward.as-is-documentation",
+      "path": "skills/planning-steward/as-is-documentation",
+      "status": "needs_tests",
+      "version": "0.1.0",
+      "agent_role": "planning_steward",
+      "source_story": "STORY-020.6"
+    },
+    {
+      "skill_id": "planning-steward.delta-spec-authoring",
+      "path": "skills/planning-steward/delta-spec-authoring",
+      "status": "needs_tests",
+      "version": "0.1.0",
+      "agent_role": "planning_steward",
+      "source_story": "STORY-020.6"
+    },
+    {
+      "skill_id": "supervisor.impact-aware-contract",
+      "path": "skills/supervisor/impact-aware-contract",
+      "status": "needs_tests",
+      "version": "0.1.0",
+      "agent_role": "supervisor",
+      "source_story": "STORY-020.6"
+    },
+    {
+      "skill_id": "reviewer.test-output-interpretation",
+      "agent_role": "reviewer",
+      "description": "Parse failing test output into structured failure signals: test name, assertion type, actual vs expected, evidence lines. Never infers implementation intent.",
+      "version": "0.1.0",
+      "status": "registered",
+      "entry_documents": [
+        "SKILL.md"
+      ],
+      "scripts": [
+        "scripts/evaluate.py"
+      ],
+      "tests": [
+        "tests/test_skill.py"
+      ],
+      "validation": [
+        "pytest -q tests/"
+      ],
+      "memory_file": ".memory.md",
+      "depends_on": [],
+      "enhances": [
+        "reviewer.root-cause-hypothesis-ranking"
+      ],
+      "provenance": {
+        "source_story": "STORY-022.6",
+        "source_trajectory": "",
+        "created_by": "harness"
+      },
+      "failure_signatures": [
+        "inferred|intent",
+        "missing|test_name",
+        "bad|assertion_type"
+      ],
+      "last_evaluation": {
+        "passed": 5,
+        "total": 5,
+        "fresh_runs": 1,
+        "pass_rate": 1.0,
+        "at": "2026-06-13T15:24:47.078987Z"
+      },
+      "leakage_audit": "unrun"
+    },
+    {
+      "skill_id": "reviewer.root-cause-hypothesis-ranking",
+      "agent_role": "reviewer",
+      "description": "Given structured failure signals + diff + genes, produce \u22651 ranked root-cause hypotheses with confidence 0\u20131 and evidence_lines. Rank descending by confidence.",
+      "version": "0.1.0",
+      "status": "registered",
+      "entry_documents": [
+        "SKILL.md"
+      ],
+      "scripts": [
+        "scripts/evaluate.py"
+      ],
+      "tests": [
+        "tests/test_skill.py"
+      ],
+      "validation": [
+        "pytest -q tests/"
+      ],
+      "memory_file": ".memory.md",
+      "depends_on": [
+        "reviewer.test-output-interpretation"
+      ],
+      "enhances": [
+        "reviewer.improvement-direction-authoring"
+      ],
+      "provenance": {
+        "source_story": "STORY-022.6",
+        "source_trajectory": "",
+        "created_by": "harness"
+      },
+      "failure_signatures": [
+        "empty|hypotheses",
+        "confidence|out_of_range",
+        "wrong|sort_order"
+      ],
+      "last_evaluation": {
+        "passed": 5,
+        "total": 5,
+        "fresh_runs": 1,
+        "pass_rate": 1.0,
+        "at": "2026-06-13T15:24:47.246790Z"
+      },
+      "leakage_audit": "unrun"
+    },
+    {
+      "skill_id": "reviewer.improvement-direction-authoring",
+      "agent_role": "reviewer",
+      "description": "Author \u22651 structured ImprovementDirection items with valid direction_type and rationale. Directions requiring scope expansion must be flagged, not auto-applied.",
+      "version": "0.1.0",
+      "status": "registered",
+      "entry_documents": [
+        "SKILL.md"
+      ],
+      "scripts": [
+        "scripts/evaluate.py"
+      ],
+      "tests": [
+        "tests/test_skill.py"
+      ],
+      "validation": [
+        "pytest -q tests/"
+      ],
+      "memory_file": ".memory.md",
+      "depends_on": [
+        "reviewer.root-cause-hypothesis-ranking"
+      ],
+      "enhances": [],
+      "provenance": {
+        "source_story": "STORY-022.6",
+        "source_trajectory": "",
+        "created_by": "harness"
+      },
+      "failure_signatures": [
+        "empty|items",
+        "bad|direction_type",
+        "scope_expansion|not_flagged"
+      ],
+      "last_evaluation": {
+        "passed": 5,
+        "total": 5,
+        "fresh_runs": 1,
+        "pass_rate": 1.0,
+        "at": "2026-06-13T15:24:47.407258Z"
+      },
+      "leakage_audit": "unrun"
+    },
+    {
+      "skill_id": "reviewer.what-not-to-change-guardrails",
+      "agent_role": "reviewer",
+      "description": "Author do_not_touch entries \u2014 file patterns that must not be modified in the repair. Conservative: when in doubt, add. Passing test files always in do_not_touch.",
+      "version": "0.1.0",
+      "status": "registered",
+      "entry_documents": [
+        "SKILL.md"
+      ],
+      "scripts": [
+        "scripts/evaluate.py"
+      ],
+      "tests": [
+        "tests/test_skill.py"
+      ],
+      "validation": [
+        "pytest -q tests/"
+      ],
+      "memory_file": ".memory.md",
+      "depends_on": [],
+      "enhances": [],
+      "provenance": {
+        "source_story": "STORY-022.6",
+        "source_trajectory": "",
+        "created_by": "harness"
+      },
+      "failure_signatures": [
+        "empty|do_not_touch",
+        "missing|rationale",
+        "passing_test|not_in_list"
+      ],
+      "last_evaluation": {
+        "passed": 5,
+        "total": 5,
+        "fresh_runs": 1,
+        "pass_rate": 1.0,
+        "at": "2026-06-13T15:24:47.567300Z"
+      },
+      "leakage_audit": "unrun"
+    },
+    {
+      "skill_id": "reviewer.cross-story-consistency-review",
+      "agent_role": "reviewer",
+      "description": "Validate cross-story consistency in parallel runs: check violations are substantive, affected_story_ids are named, and any rescope_recommendation is advisory-only.",
+      "version": "0.1.0",
+      "status": "registered",
+      "entry_documents": [
+        "SKILL.md"
+      ],
+      "scripts": [
+        "scripts/evaluate.py"
+      ],
+      "tests": [
+        "tests/test_skill.py"
+      ],
+      "validation": [
+        "pytest -q tests/"
+      ],
+      "memory_file": ".memory.md",
+      "depends_on": [],
+      "enhances": [
+        "reviewer.improvement-direction-authoring"
+      ],
+      "provenance": {
+        "source_story": "STORY-023.5",
+        "source_trajectory": "",
+        "created_by": "harness"
+      },
+      "failure_signatures": [
+        "missing|affected_story_ids",
+        "short|description",
+        "non-advisory|rescope"
+      ],
+      "last_evaluation": {
+        "passed": 5,
+        "total": 5,
+        "fresh_runs": 1,
+        "pass_rate": 1.0,
+        "at": "2026-06-13T16:30:24.311433Z"
+      },
+      "leakage_audit": "unrun"
+    },
+    {
+      "skill_id": "reviewer.architecture-conformance-review",
+      "agent_role": "reviewer",
+      "description": "Validate architecture-conformance reviews: conforms field present, violations listed when non-conforming, rescope_recommendation advisory-only with valid direction.",
+      "version": "0.1.0",
+      "status": "registered",
+      "entry_documents": [
+        "SKILL.md"
+      ],
+      "scripts": [
+        "scripts/evaluate.py"
+      ],
+      "tests": [
+        "tests/test_skill.py"
+      ],
+      "validation": [
+        "pytest -q tests/"
+      ],
+      "memory_file": ".memory.md",
+      "depends_on": [],
+      "enhances": [
+        "reviewer.what-not-to-change-guardrails"
+      ],
+      "provenance": {
+        "source_story": "STORY-023.5",
+        "source_trajectory": "",
+        "created_by": "harness"
+      },
+      "failure_signatures": [
+        "missing|conforms",
+        "non-conforming|no_violations",
+        "bad|direction"
+      ],
+      "last_evaluation": {
+        "passed": 5,
+        "total": 5,
+        "fresh_runs": 1,
+        "pass_rate": 1.0,
+        "at": "2026-06-13T16:30:24.478265Z"
+      },
+      "leakage_audit": "unrun"
+    }
+  ]
+}

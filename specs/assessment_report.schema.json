@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "assessment_report.schema.json",
+  "title": "AssessmentReport",
+  "description": "STORY-030.3: output of the Assessor agent. The Assessor authors concrete acceptance tests from the Planning-authored acceptance_intent, runs them against the delivered result, and emits a satisfaction verdict with evidence. The Assessor writes acceptance TESTS only — never product code — and never authors a pass verdict without running the tests (the verdict is derived from results).",
+  "type": "object",
+  "required": [
+    "report_id", "story_id", "authored_tests", "results", "verdict",
+    "satisfied_intent_ids", "unsatisfied_intent_ids", "evidence",
+    "assessor_model", "assessed_at"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "report_id": { "type": "string", "minLength": 1 },
+    "story_id": { "type": "string", "minLength": 1 },
+    "authored_tests": {
+      "type": "array",
+      "description": "Concrete acceptance tests authored by the Assessor from the intent. Every path must be a test file, never product code.",
+      "items": {
+        "type": "object",
+        "required": ["path", "intent_id", "content"],
+        "additionalProperties": false,
+        "properties": {
+          "path": { "type": "string", "minLength": 1 },
+          "intent_id": { "type": "string", "minLength": 1 },
+          "content": { "type": "string" }
+        }
+      }
+    },
+    "results": {
+      "type": "array",
+      "description": "Per-test run result. The verdict is computed from these, not asserted by the model.",
+      "items": {
+        "type": "object",
+        "required": ["intent_id", "test_path", "passed", "detail"],
+        "additionalProperties": false,
+        "properties": {
+          "intent_id": { "type": "string" },
+          "test_path": { "type": "string" },
+          "passed": { "type": "boolean" },
+          "detail": { "type": "string" }
+        }
+      }
+    },
+    "verdict": {
+      "enum": ["pass", "fail"],
+      "description": "pass iff every intent behaviour has at least one authored test and all results passed."
+    },
+    "satisfied_intent_ids": { "type": "array", "items": { "type": "string" } },
+    "unsatisfied_intent_ids": { "type": "array", "items": { "type": "string" } },
+    "evidence": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Human-readable evidence lines backing the verdict."
+    },
+    "assessor_model": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Model that ran the Assessor; cross-model from the Developer by default."
+    },
+    "assessed_at": { "type": "string", "minLength": 1 }
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "name": "@gateloop/web",
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@vitejs/plugin-react": "latest",
+    "vite": "latest",
+    "react": "latest",
+    "react-dom": "latest"
+  },
+  "devDependencies": {
+    "@gateloop/settings": "workspace:*",
+    "vitest": "^2",
+    "@vitest/ui": "^2",
+    "jsdom": "^24",
+    "@testing-library/react": "^16",
+    "@testing-library/jest-dom": "^6",
+    "typescript": "^5"
+  }
+}

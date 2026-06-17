@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "agent_envelope/assessment_request.schema.json",
+  "title": "AssessmentRequest",
+  "description": "STORY-032.1: the envelope sent to the Assessor (EPIC-030). Carries the requirement intent and the delivered RESULT only — never how it was produced (the Assessor is result-only, isolated from the generator).",
+  "type": "object",
+  "required": ["story_id", "acceptance_intent", "delivered_result"],
+  "additionalProperties": true,
+  "properties": {
+    "request_id": { "type": "string", "description": "Optional request id for correlation." },
+    "story_id": { "type": "string", "description": "The story being assessed." },
+    "acceptance_intent": {
+      "type": "object",
+      "description": "The testable intent (Planning, 030.1) the Assessor turns into concrete tests.",
+      "required": ["authored_at", "behaviors"],
+      "additionalProperties": true,
+      "properties": {
+        "authored_at": { "const": "planning", "description": "Authored before code existed." },
+        "behaviors": {
+          "type": "array",
+          "description": "Testable behavior items (snake_case ids, not prose).",
+          "items": {
+            "type": "object",
+            "required": ["id", "kind", "target"],
+            "additionalProperties": true,
+            "properties": {
+              "id": { "type": "string" },
+              "kind": { "enum": ["behavior", "file_exists", "command"] },
+              "target": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    "delivered_result": {
+      "type": "object",
+      "description": "The delivered outcome (code + tests) — result only, not the generation process.",
+      "required": ["story_id", "changed_files"],
+      "additionalProperties": true,
+      "properties": {
+        "story_id": { "type": "string" },
+        "changed_files": { "type": "array", "items": { "type": "string" } },
+        "files": { "type": "object", "description": "Optional path→content map the Assessor may inspect." }
+      }
+    }
+  }
+}

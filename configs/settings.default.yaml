@@ -1,0 +1,37 @@
+# GateLoop default settings. Copy individual keys to settings.yaml to override.
+# DO NOT add global gates here — they are not settings.
+
+target:
+  project_type: greenfield
+  stack: node-ts
+
+model:
+  real_provider_scope: none
+
+parallelism:
+  max_parallel_stories: 2
+  enable_competitive_debug: false
+
+quality_bar:
+  greenfield: [build, test, typecheck]
+  brownfield_strictness: zero_new_failures
+
+budget:
+  max_calls_per_story: 30
+  max_tokens_per_story: 400000
+  max_calls_per_run: 1000
+
+delivery:
+  promotion_target: local_stable
+  human_gate_interface: cli
+
+failure_bank:
+  scope: project
+
+brownfield:
+  recovery_depth: shallow
+
+review:
+  trigger: on_second_failure
+  cross_model: false
+  max_directions: 2

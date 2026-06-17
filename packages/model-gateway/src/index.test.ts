@@ -1,0 +1,682 @@
+import { describe, it, expect } from 'vitest';
+import fs from 'node:fs';
+import path from 'node:path';
+import os from 'node:os';
+import { parse as parseYaml } from 'yaml';
+import {
+  BudgetGuard,
+  RunBudgetPool,
+  workerGuardedCall,
+  callFirstValid,
+  callProvider,
+  createDisabledRemoteProvider,
+  createFixtureProvider,
+  createManualProvider,
+  createRealProvider,
+  createApiKeyProvider,
+  validateApiKey,
+  buildValidatedProviderMetadata,
+  bootstrapLiveProviders,
+  validateRoutingRegistered,
+  collectRoutedProviderIds,
+  createScriptedProvider,
+  guardedCall,
+  ProviderRegistry,
+  resolveProviderIdsFromConfig,
+  validateStructuredOutput,
+  validateModelRegistry,
+  parseModelRef,
+  buildTierLadder,
+  selectTierForAttempt,
+  budgetConfigFromSettings,
+  validateModelRegistryV2,
+  resolveModelNames,
+  findModel,
+  computeModelCost,
+  computeRunCost,
+  type DeveloperOutput,
+  type RealProviderHttpClient,
+  type TypedSecretHandle,
+  type RoutingConfig,
+  type ModelRegistryConfig,
+  type ModelEntry,
+  type TierLadder,
+  type TierSelectionContext,
+} from './index';
+import { DEFAULT_SETTINGS } from '@gateloop/settings';
+
+const goodDeveloperOutput: DeveloperOutput = {
+  kind: 'patch_proposal', proposal_id: 'p1', story_id: 'STORY-X', changed_files: ['src/a.ts'],
+  contract_id: 'C1', change_type: 'MODIFY', rollback_notes: 'revert src/a.ts',
+};
+
+const req = { request_id: 'r1', target_agent: 'developer' as const, task_class: 'patch_generation' as const, story_id: 'STORY-X' };
+
+describe('model-gateway provider interface', () => {
+  it('scripted_provider_returns_registered_developer_output', async () => {
+    const p = createScriptedProvider('scripted-demo', [{ case_id: 'c1', match: { story_id: 'STORY-X' }, output: goodDeveloperOutput }]);
+    const r = await callProvider(p, req);
+    expect(r.ok).toBe(true);
+    expect(r.output?.kind).toBe('patch_proposal');
+  });
+
+  it('scripted_provider_unmatched_case_returns_structured_blocked_report', async () => {
+    const p = createScriptedProvider('scripted-demo', [{ case_id: 'c1', match: { story_id: 'OTHER' }, output: goodDeveloperOutput }]);
+    const r = await callProvider(p, req);
+    expect(r.ok).toBe(true);
+    expect(r.output?.kind).toBe('blocked_report');
+  });
+
+  it('fixture_provider_reads_agent_output_json', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-fixture-'));
+    fs.writeFileSync(path.join(root, 'demo.json'), JSON.stringify(goodDeveloperOutput));
+    const r = await callProvider(createFixtureProvider('fixture', root), { ...req, fixture_id: 'demo' });
+    expect(r.ok).toBe(true);
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  it('fixture_provider_rejects_path_escape', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-fixture-'));
+    const r = await callProvider(createFixtureProvider('fixture', root), { ...req, fixture_id: '../escape' });
+    expect(r.ok).toBe(false);
+    expect(r.errors.join(' ')).toMatch(/escapes|ENOENT/);
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  it('manual_provider_returns_escalation_placeholder', async () => {
+    const r = await callProvider(createManualProvider(), req);
+    expect(r.ok).toBe(true);
+    expect(r.output?.kind).toBe('clarification_request');
+  });
+
+  it('llm_remote_provider_is_not_enabled_without_secret_handle', async () => {
+    const r = await callProvider(createDisabledRemoteProvider(), req);
+    expect(r.ok).toBe(false);
+    expect(r.errors.join(' ')).toMatch(/disabled/);
+  });
+
+  it('provider_output_must_pass_agent_output_validation', () => {
+    expect(validateStructuredOutput('developer', goodDeveloperOutput).ok).toBe(true);
+  });
+
+  it('invalid_provider_output_is_rejected', async () => {
+    const p = createScriptedProvider('bad', [{ case_id: 'bad', match: {}, output: { kind: 'patch_proposal' } as DeveloperOutput }]);
+    const r = await callProvider(p, req);
+    expect(r.ok).toBe(false);
+    expect(r.errors.join(' ')).toMatch(/proposal_id/);
+  });
+
+  it('unknown_provider_kind_is_rejected_by_registry_lookup', () => {
+    const registry = new ProviderRegistry();
+    expect(() => registry.get('missing')).toThrow(/unknown provider/);
+  });
+
+  it('call_first_valid_falls_back_to_second_provider', async () => {
+    const registry = new ProviderRegistry();
+    registry.register(createDisabledRemoteProvider('disabled'));
+    registry.register(createScriptedProvider('scripted', [{ case_id: 'c1', match: {}, output: goodDeveloperOutput }]));
+    const r = await callFirstValid(registry, ['disabled', 'scripted'], req);
+    expect(r.ok).toBe(true);
+    expect(r.provider_id).toBe('scripted');
+  });
+});
+
+describe('real-provider-adapter', () => {
+  it('real_provider_behind_gateway_interface', async () => {
+    const mockResponse = {
+      choices: [{ message: { content: JSON.stringify(goodDeveloperOutput) } }],
+      usage: { prompt_tokens: 10, completion_tokens: 20 },
+    };
+    const mockHttp: RealProviderHttpClient = async () => ({
+      ok: true, status: 200, json: async () => mockResponse,
+    });
+    const p = createRealProvider({
+      enabled: true,
+      getAccessToken: async () => 'fake-token',
+      httpClient: mockHttp,
+    });
+    const r = await callProvider(p, req);
+    expect(r.ok).toBe(true);
+    expect(r.output?.kind).toBe('patch_proposal');
+  });
+
+  it('malformed_output_rejected_same_as_fixtures', async () => {
+    const mockHttp: RealProviderHttpClient = async () => ({
+      ok: true, status: 200,
+      json: async () => ({ choices: [{ message: { content: '{"kind":"bad_kind"}' } }], usage: {} }),
+    });
+    const p = createRealProvider({
+      enabled: true, getAccessToken: async () => 'tok', httpClient: mockHttp,
+    });
+    const r = await callProvider(p, req);
+    expect(r.ok).toBe(false);
+  });
+
+  it('ci_runs_never_call_real_provider', async () => {
+    let called = false;
+    const mockHttp: RealProviderHttpClient = async () => { called = true; return { ok: true, status: 200, json: async () => ({}) }; };
+    const p = createRealProvider({ enabled: false, getAccessToken: async () => 'tok', httpClient: mockHttp });
+    const r = await callProvider(p, req);
+    expect(called).toBe(false);
+    expect(r.ok).toBe(false);
+    expect(r.errors.join(' ')).toMatch(/disabled/);
+  });
+
+  it('provider_selection_via_routing_config', () => {
+    const config: RoutingConfig = {
+      agents: {
+        developer: { primary: 'codex', fallbacks: ['deepseek'] },
+        supervisor: { primary: 'scripted', fallbacks: [] },
+      },
+      task_overrides: { patch: { developer: 'deepseek' } },
+    };
+    expect(resolveProviderIdsFromConfig(config, 'developer', 'patch_generation')).toEqual(['codex', 'deepseek']);
+    expect(resolveProviderIdsFromConfig(config, 'supervisor', 'patch_generation')).toEqual(['scripted']);
+  });
+
+  it('non_2xx_response_returns_redacted_error', async () => {
+    const mockHttp: RealProviderHttpClient = async () => ({
+      ok: false, status: 429, json: async () => ({ error: 'access_token=SECRET_VALUE' }),
+    });
+    const p = createRealProvider({ enabled: true, getAccessToken: async () => 'tok', httpClient: mockHttp });
+    const r = await callProvider(p, req);
+    expect(r.ok).toBe(false);
+    expect(r.errors.join(' ')).not.toContain('SECRET_VALUE');
+    expect(r.errors.join(' ')).toMatch(/429|failed/i);
+  });
+});
+
+describe('api-key-auth (STORY-028.1)', () => {
+  const handle: TypedSecretHandle = { handle_id: 'provider.openai.default', handle_type: 'api_key', provider: 'openai' };
+  const SECRET = 'sk-LIVE-SECRET-VALUE';
+  const baseUrl = 'https://api.openai.com/v1';
+
+  it('api_key_auth_path_exists', async () => {
+    const mockHttp: RealProviderHttpClient = async () => ({
+      ok: true, status: 200,
+      json: async () => ({ choices: [{ message: { content: JSON.stringify(goodDeveloperOutput) } }], usage: { prompt_tokens: 5, completion_tokens: 7 } }),
+    });
+    const p = createApiKeyProvider({ handle, resolveSecret: async () => SECRET, baseUrl, httpClient: mockHttp, enabled: true });
+    expect(p.kind).toBe('llm_remote');
+    const r = await callProvider(p, req);
+    expect(r.ok).toBe(true);
+    expect(r.output?.kind).toBe('patch_proposal');
+  });
+
+  it('key_loaded_via_typed_secret_handle', async () => {
+    const seen: TypedSecretHandle[] = [];
+    let bearer = '';
+    const mockHttp: RealProviderHttpClient = async (_url, init) => {
+      bearer = init.headers['Authorization'];
+      return { ok: true, status: 200, json: async () => ({ choices: [{ message: { content: JSON.stringify(goodDeveloperOutput) } }], usage: {} }) };
+    };
+    const resolveSecret = async (h: TypedSecretHandle) => { seen.push(h); return SECRET; };
+    const p = createApiKeyProvider({ handle, resolveSecret, baseUrl, httpClient: mockHttp, enabled: true });
+    await callProvider(p, req);
+    expect(seen).toEqual([handle]);                  // resolved via the typed handle
+    expect(bearer).toBe(`Bearer ${SECRET}`);          // and used as the bearer credential
+  });
+
+  it('rejects_non_api_key_handle', () => {
+    const oauthHandle: TypedSecretHandle = { handle_id: 'provider.codex.oauth', handle_type: 'oauth_token', provider: 'codex' };
+    expect(() => createApiKeyProvider({ handle: oauthHandle, resolveSecret: async () => SECRET, baseUrl, enabled: true })).toThrow(/api_key handle/);
+  });
+
+  it('validation_call_gated_by_real_api_calls', async () => {
+    let called = false;
+    const mockHttp: RealProviderHttpClient = async () => { called = true; return { ok: true, status: 200, json: async () => ({ data: [{ id: 'gpt-5.5' }] }) }; };
+    // Gate closed → no network call, gated_off reported.
+    const off = await validateApiKey({ handle, resolveSecret: async () => SECRET, baseUrl, enabled: false, httpClient: mockHttp });
+    expect(called).toBe(false);
+    expect(off.gated_off).toBe(true);
+    expect(off.ok).toBe(false);
+    // Gate open → call runs, models counted.
+    const on = await validateApiKey({ handle, resolveSecret: async () => SECRET, baseUrl, enabled: true, httpClient: mockHttp });
+    expect(called).toBe(true);
+    expect(on.ok).toBe(true);
+    expect(on.gated_off).toBe(false);
+    expect(on.models_available).toBe(1);
+  });
+
+  it('only_non_secret_metadata_persisted', async () => {
+    const mockHttp: RealProviderHttpClient = async () => ({ ok: true, status: 200, json: async () => ({ data: [{ id: 'a' }, { id: 'b' }] }) });
+    const v = await validateApiKey({ handle, resolveSecret: async () => SECRET, baseUrl, enabled: true, httpClient: mockHttp });
+    const meta = buildValidatedProviderMetadata(handle, baseUrl, v, '2026-06-14T00:00:00Z');
+    const serialized = JSON.stringify(meta);
+    expect(serialized).not.toContain(SECRET);
+    expect(meta).toMatchObject({ provider: 'openai', base_url: baseUrl, validated_at: '2026-06-14T00:00:00Z', models_available: 2 });
+    expect(Object.values(meta)).not.toContain(SECRET);
+  });
+
+  it('key_never_in_trace_or_context', async () => {
+    // Error body echoes the key — it must not appear in the redacted result.
+    const leaky: RealProviderHttpClient = async () => ({ ok: false, status: 401, json: async () => ({ error: `invalid key ${SECRET}` }) });
+    const v = await validateApiKey({ handle, resolveSecret: async () => SECRET, baseUrl, enabled: true, httpClient: leaky });
+    expect(v.ok).toBe(false);
+    expect(JSON.stringify(v)).not.toContain(SECRET);
+    expect(v.error).toMatch(/HTTP 401/);
+    // The provider call path is equally redacted on HTTP error.
+    const p = createApiKeyProvider({ handle, resolveSecret: async () => SECRET, baseUrl, httpClient: leaky, enabled: true });
+    const r = await callProvider(p, req);
+    expect(r.ok).toBe(false);
+    expect(r.errors.join(' ')).not.toContain(SECRET);
+  });
+});
+
+describe('live-provider-bootstrap (STORY-028.2)', () => {
+  const handle: TypedSecretHandle = { handle_id: 'provider.openai.default', handle_type: 'api_key', provider: 'openai' };
+  const bootCfg = [{ provider_id: 'openai', handle, base_url: 'https://api.openai.com/v1' }];
+  const okHttp: RealProviderHttpClient = async () => ({
+    ok: true, status: 200,
+    json: async () => ({ choices: [{ message: { content: JSON.stringify(goodDeveloperOutput) } }], usage: {} }),
+  });
+
+  it('createRealProvider_called_on_boot_when_gated_on_and_live_adapter_registered', async () => {
+    const registry = new ProviderRegistry();
+    const result = bootstrapLiveProviders({ enabled: true, providers: bootCfg, registry, resolveSecret: async () => 'sk-SECRET', httpClient: okHttp });
+    expect(result.gated_off).toBe(false);
+    expect(result.registered.map(r => r.provider_id)).toEqual(['openai']);
+    expect(registry.has('openai')).toBe(true);                  // live_adapter_registered_in_gateway
+    // and the registered adapter actually routes a call through the gateway
+    const r = await callProvider(registry.get('openai'), req);
+    expect(r.ok).toBe(true);
+  });
+
+  it('bootstrap_idempotent', () => {
+    const registry = new ProviderRegistry();
+    const first = bootstrapLiveProviders({ enabled: true, providers: bootCfg, registry, resolveSecret: async () => 'sk-SECRET', httpClient: okHttp });
+    const second = bootstrapLiveProviders({ enabled: true, providers: bootCfg, registry, resolveSecret: async () => 'sk-SECRET', httpClient: okHttp });
+    expect(first.registered).toHaveLength(1);
+    expect(second.registered).toHaveLength(0);                  // no double-register
+    expect(second.already_registered).toEqual(['openai']);
+    expect(registry.list().filter(p => p.id === 'openai')).toHaveLength(1);
+  });
+
+  it('noop_when_gate_closed_ci_safe', async () => {
+    const registry = new ProviderRegistry();
+    let resolverCalled = false;
+    const result = bootstrapLiveProviders({ enabled: false, providers: bootCfg, registry, resolveSecret: async () => { resolverCalled = true; return 'sk-SECRET'; }, httpClient: okHttp });
+    expect(result.gated_off).toBe(true);
+    expect(result.registered).toHaveLength(0);
+    expect(registry.has('openai')).toBe(false);                 // nothing built
+    expect(resolverCalled).toBe(false);                         // no secret access when gated off
+  });
+
+  it('registration_record_carries_handle_reference_not_secret', () => {
+    const registry = new ProviderRegistry();
+    const result = bootstrapLiveProviders({ enabled: true, providers: bootCfg, registry, resolveSecret: async () => 'sk-SECRET', httpClient: okHttp });
+    expect(JSON.stringify(result.registered)).not.toContain('sk-SECRET');
+    expect(result.registered[0]).toMatchObject({ provider_id: 'openai', provider: 'openai', handle_id: 'provider.openai.default' });
+  });
+});
+
+describe('routing-safety (STORY-028.3)', () => {
+  const fixtureProvider = (id: string): { id: string; kind: 'fixture'; call: () => Promise<unknown> } =>
+    ({ id, kind: 'fixture', call: async () => ({}) });
+
+  it('routing_to_unregistered_provider_fails_closed', () => {
+    const registry = new ProviderRegistry();
+    registry.register(fixtureProvider('scripted'));
+    const routing: RoutingConfig = { agents: { developer: { primary: 'openai/gpt-5.5', fallbacks: ['scripted'] } } };
+    const result = validateRoutingRegistered(routing, registry);
+    expect(result.ok).toBe(false);
+    expect(result.unregistered).toEqual(['openai']);     // provider/model ref mapped to provider id
+  });
+
+  it('boot_time_routing_validation_runs_over_overrides_too', () => {
+    const registry = new ProviderRegistry();
+    registry.register(fixtureProvider('codex'));
+    // primary registered, but a task_override points at an unregistered provider
+    const routing: RoutingConfig = {
+      agents: { developer: { primary: 'codex', fallbacks: [] } },
+      task_overrides: { patch: { developer: 'deepseek' } },
+    };
+    const result = validateRoutingRegistered(routing, registry);
+    expect(result.ok).toBe(false);
+    expect(result.unregistered).toContain('deepseek');   // scan reaches task_overrides
+    expect(collectRoutedProviderIds(routing).sort()).toEqual(['codex', 'deepseek']);
+  });
+
+  it('clear_escalation_not_silent_crash', () => {
+    const registry = new ProviderRegistry();
+    const routing: RoutingConfig = { agents: { developer: { primary: 'openai', fallbacks: [] } } };
+    let result!: ReturnType<typeof validateRoutingRegistered>;
+    expect(() => { result = validateRoutingRegistered(routing, registry); }).not.toThrow();
+    expect(result.escalation).toBeTruthy();
+    expect(result.escalation).toMatch(/openai/);
+    expect(result.escalation).toMatch(/unregistered|fail closed/i);
+  });
+
+  it('fixture_routing_unaffected', () => {
+    const registry = new ProviderRegistry();
+    registry.register(fixtureProvider('fixture-dev'));
+    registry.register(fixtureProvider('scripted'));
+    const routing: RoutingConfig = {
+      agents: {
+        developer: { primary: 'fixture-dev', fallbacks: ['scripted'] },
+        supervisor: { primary: 'scripted', fallbacks: [] },
+      },
+    };
+    const result = validateRoutingRegistered(routing, registry);
+    expect(result.ok).toBe(true);
+    expect(result.escalation).toBeNull();
+  });
+});
+
+describe('budget-guard', () => {
+  it('per_story_call_budget_enforced', async () => {
+    const guard = new BudgetGuard('STORY-X', { maxCallsPerStory: 2, maxTokensPerStory: 999999, onExceed: 'escalate' });
+    const p = createScriptedProvider('p', [{ case_id: 'c', match: {}, output: goodDeveloperOutput }]);
+    const r1 = await guardedCall(guard, p, req); expect(r1.ok).toBe(true);
+    const r2 = await guardedCall(guard, p, req); expect(r2.ok).toBe(true);
+    const r3 = await guardedCall(guard, p, req);
+    expect(r3.ok).toBe(false);
+    expect(r3.errors.join(' ')).toMatch(/call_budget|budget/i);
+  });
+
+  it('token_budget_enforced', async () => {
+    const guard = new BudgetGuard('STORY-X', { maxCallsPerStory: 999, maxTokensPerStory: 1, onExceed: 'escalate' });
+    const p = createScriptedProvider('p', [{ case_id: 'c', match: {}, output: goodDeveloperOutput }]);
+    await guardedCall(guard, p, req);
+    const r2 = await guardedCall(guard, p, req);
+    expect(r2.ok).toBe(false);
+    expect(r2.errors.join(' ')).toMatch(/token_budget|token|budget/i);
+  });
+
+  it('overrun_blocks_and_escalates', async () => {
+    const guard = new BudgetGuard('STORY-Y', { maxCallsPerStory: 0, maxTokensPerStory: 999999, onExceed: 'escalate' });
+    const p = createScriptedProvider('p', [{ case_id: 'c', match: {}, output: goodDeveloperOutput }]);
+    const r = await guardedCall(guard, p, req);
+    expect(r.ok).toBe(false);
+  });
+
+  it('kill_switch_halts_all_provider_calls', async () => {
+    const guard = new BudgetGuard('STORY-Z', { maxCallsPerStory: 100, maxTokensPerStory: 999999, onExceed: 'escalate' });
+    const p = createScriptedProvider('p', [{ case_id: 'c', match: {}, output: goodDeveloperOutput }]);
+    guard.kill('operator kill switch engaged');
+    const r = await guardedCall(guard, p, req);
+    expect(r.ok).toBe(false);
+    expect(guard.isKilled).toBe(true);
+  });
+
+  it('record_accumulates_usage_correctly', () => {
+    const guard = new BudgetGuard('STORY-W', { maxCallsPerStory: 10, maxTokensPerStory: 100, onExceed: 'escalate' });
+    guard.record({ inputTokens: 40, outputTokens: 40 });
+    expect(guard.check().ok).toBe(true);
+    guard.record({ inputTokens: 10, outputTokens: 11 });
+    expect(guard.check().ok).toBe(false);
+  });
+});
+
+describe('run-budget-pool', () => {
+  it('run_budget_partitioned_across_workers', () => {
+    const pool = new RunBudgetPool({ totalCallsBudget: 10, totalTokensBudget: 100000, maxWorkers: 2 });
+    const g1 = pool.registerWorker('w1');
+    const g2 = pool.registerWorker('w2');
+    // Per-worker budget = floor(10/2) = 5 calls
+    for (let i = 0; i < 4; i++) g1.record({ inputTokens: 1, outputTokens: 1 });
+    expect(g1.check().ok).toBe(true);   // 4/5 calls used — still ok
+    g1.record({ inputTokens: 1, outputTokens: 1 }); // 5th call
+    expect(g1.check().ok).toBe(false);  // 5/5 — at budget limit
+    expect(g2.check().ok).toBe(true);   // w2 unaffected
+  });
+
+  it('worker_overrun_escalates_without_blocking_others', () => {
+    const pool = new RunBudgetPool({ totalCallsBudget: 2, totalTokensBudget: 100000, maxWorkers: 2 });
+    const g1 = pool.registerWorker('w1');
+    const g2 = pool.registerWorker('w2');
+    // Per-worker budget = floor(2/2) = 1 call
+    g1.record({ inputTokens: 1, outputTokens: 1 });
+    g1.record({ inputTokens: 1, outputTokens: 1 }); // over budget
+    expect(g1.check().ok).toBe(false);
+    expect(g2.check().ok).toBe(true);
+    expect(pool.isKilled).toBe(false);  // pool not killed
+  });
+
+  it('kill_switch_halts_all_workers', () => {
+    const pool = new RunBudgetPool({ totalCallsBudget: 100, totalTokensBudget: 999999, maxWorkers: 3 });
+    const g1 = pool.registerWorker('w1');
+    const g2 = pool.registerWorker('w2');
+    pool.killAll('test kill');
+    expect(g1.isKilled).toBe(true);
+    expect(g2.isKilled).toBe(true);
+    expect(pool.isKilled).toBe(true);
+  });
+
+  it('new_worker_registered_after_kill_is_already_killed', () => {
+    const pool = new RunBudgetPool({ totalCallsBudget: 100, totalTokensBudget: 999999, maxWorkers: 2 });
+    pool.killAll('pre-kill');
+    const g = pool.registerWorker('late');
+    expect(g.isKilled).toBe(true);
+  });
+
+  it('total_usage_accumulates_across_workers', () => {
+    const pool = new RunBudgetPool({ totalCallsBudget: 100, totalTokensBudget: 999999, maxWorkers: 2 });
+    const g1 = pool.registerWorker('w1');
+    const g2 = pool.registerWorker('w2');
+    g1.record({ inputTokens: 10, outputTokens: 5 });
+    g1.record({ inputTokens: 10, outputTokens: 5 });
+    g2.record({ inputTokens: 20, outputTokens: 10 });
+    const usage = pool.totalUsage;
+    expect(usage.calls).toBe(3);
+    expect(usage.tokens).toBe(60);
+  });
+
+  it('worker_guarded_call_uses_per_worker_budget', async () => {
+    const pool = new RunBudgetPool({ totalCallsBudget: 2, totalTokensBudget: 999999, maxWorkers: 2 });
+    // Per-worker budget = floor(2/2) = 1 call
+    const p = createScriptedProvider('p', [{ case_id: 'c', match: {}, output: goodDeveloperOutput }]);
+    const r1 = await workerGuardedCall(pool, 'w1', p, req);
+    expect(r1.ok).toBe(true);
+    const r2 = await workerGuardedCall(pool, 'w1', p, req);
+    expect(r2.ok).toBe(false);  // second call exceeds per-worker budget of 1
+  });
+});
+
+describe('gate', () => {
+  it('gate_defaults_off', async () => {
+    const p = createRealProvider({ enabled: false, getAccessToken: async () => 'tok' });
+    expect(p.kind).toBe('llm_remote');
+    const r = await callProvider(p, req);
+    expect(r.ok).toBe(false);
+    expect(r.errors.join(' ')).toMatch(/disabled/);
+  });
+});
+
+const validCfg: ModelRegistryConfig = {
+  providers: {
+    codex:    { kind: 'openai_responses_codex', models: [{ name: 'gpt-5.5-codex', tier: 'strong' }] },
+    deepseek: { kind: 'openai_compatible',      models: [
+      { name: 'deepseek-v4-pro',   tier: 'strong' },
+      { name: 'deepseek-v4-flash', tier: 'cheap' },
+    ]},
+  },
+  agents: {
+    developer: { primary: 'codex/gpt-5.5-codex', fallbacks: ['deepseek/deepseek-v4-pro'] },
+  },
+};
+
+const simpleLadder: TierLadder = {
+  agent: 'developer',
+  entries: [
+    { tier: 'cheap',  provider_ref: 'deepseek/deepseek-v4-flash' },
+    { tier: 'mid',    provider_ref: 'deepseek/deepseek-v4-pro' },
+    { tier: 'strong', provider_ref: 'codex/gpt-5.5-codex' },
+  ],
+};
+const policy = { upgrade_after_n_failures: 2, hard_gene_starts_strong: true };
+
+describe('tier-ladder', () => {
+  it('second_validation_failure_upgrades_tier', () => {
+    const ctx: TierSelectionContext = { consecutiveValidationFailures: 2, matchingGenes: [], upgradePolicy: policy };
+    const entry = selectTierForAttempt(simpleLadder, ctx);
+    expect(['mid', 'strong']).toContain(entry.tier);
+  });
+
+  it('failure_gene_match_starts_at_strong_tier', () => {
+    const ctx: TierSelectionContext = {
+      consecutiveValidationFailures: 0,
+      matchingGenes: [{ matching_signal: 'test|critical', failure_type: 'test_failure' }],
+      upgradePolicy: policy,
+    };
+    expect(selectTierForAttempt(simpleLadder, ctx).tier).toBe('strong');
+  });
+
+  it('ladder_respects_budget_guard', async () => {
+    const guard = new BudgetGuard('S-1', { maxCallsPerStory: 0, maxTokensPerStory: 0, onExceed: 'escalate' });
+    const p = createScriptedProvider('p', [{ case_id: 'c', match: {}, output: goodDeveloperOutput }]);
+    const r = await guardedCall(guard, p, req);
+    expect(r.ok).toBe(false);
+  });
+
+  it('first_failure_stays_at_cheap', () => {
+    const ctx: TierSelectionContext = { consecutiveValidationFailures: 1, matchingGenes: [], upgradePolicy: policy };
+    expect(selectTierForAttempt(simpleLadder, ctx).tier).toBe('cheap');
+  });
+
+  it('ladder_built_from_routing_config', () => {
+    const routingAgents = { developer: { primary: 'codex/gpt-5.5-codex', fallbacks: ['deepseek/deepseek-v4-flash'] } };
+    const providerModels = {
+      codex:    [{ name: 'gpt-5.5-codex',     tier: 'strong' as const }],
+      deepseek: [{ name: 'deepseek-v4-flash', tier: 'cheap'  as const }],
+    };
+    const ladder = buildTierLadder('developer', routingAgents, providerModels);
+    expect(ladder.entries.length).toBeGreaterThan(0);
+    expect(ladder.entries[0].tier).toBe('cheap');
+  });
+
+  it('no_genes_no_upgrade_at_zero_failures', () => {
+    const ctx: TierSelectionContext = { consecutiveValidationFailures: 0, matchingGenes: [], upgradePolicy: policy };
+    expect(selectTierForAttempt(simpleLadder, ctx).tier).toBe('cheap');
+  });
+});
+
+describe('model-registry', () => {
+  it('routing_references_resolve_to_providers', () => {
+    expect(validateModelRegistry(validCfg).ok).toBe(true);
+  });
+
+  it('unknown_provider_fails_boot', () => {
+    const bad: ModelRegistryConfig = {
+      ...validCfg,
+      agents: { developer: { primary: 'nonexistent/gpt-5.5-codex' } },
+    };
+    const r = validateModelRegistry(bad);
+    expect(r.ok).toBe(false);
+    expect(r.errors.join(' ')).toMatch(/nonexistent/);
+  });
+
+  it('unknown_model_fails_boot', () => {
+    const bad: ModelRegistryConfig = {
+      ...validCfg,
+      agents: { developer: { primary: 'codex/bad-model-name' } },
+    };
+    const r = validateModelRegistry(bad);
+    expect(r.ok).toBe(false);
+    expect(r.errors.join(' ')).toMatch(/bad-model-name/);
+  });
+
+  it('fallback_chains_acyclic', () => {
+    const cyclic: ModelRegistryConfig = {
+      ...validCfg,
+      agents: { developer: { primary: 'codex/gpt-5.5-codex', fallbacks: ['codex/gpt-5.5-codex'] } },
+    };
+    const r = validateModelRegistry(cyclic);
+    expect(r.ok).toBe(false);
+    expect(r.errors.join(' ')).toMatch(/cycle/i);
+  });
+
+  it('invalid_registry_fails_boot', () => {
+    expect(parseModelRef('codexmodel')).toBeNull();
+    expect(parseModelRef('codex/gpt-5.5-codex')).toEqual({ provider_id: 'codex', model_name: 'gpt-5.5-codex' });
+  });
+
+  it('invalid_registry_fails_boot (legacy provider-centric, inline)', () => {
+    expect(parseModelRef('codexmodel')).toBeNull();
+    expect(parseModelRef('codex/gpt-5.5-codex')).toEqual({ provider_id: 'codex', model_name: 'gpt-5.5-codex' });
+  });
+});
+
+// ── STORY-032.6: model-centric registry ───────────────────────────────────────
+
+describe('STORY-032.6 model-centric registry', () => {
+  const models: ModelEntry[] = parseYaml(fs.readFileSync('configs/models.yaml', 'utf8')).models;
+  const routing: RoutingConfig = parseYaml(fs.readFileSync('configs/model_routing.yaml', 'utf8'));
+
+  it('named_models_registered_with_properties: models.yaml validates + routing resolves', () => {
+    // every model has a name + kind; named models carry their own properties
+    const gpt = findModel('gpt-5.4-mini', models)!;
+    expect(gpt.kind).toBe('openai');
+    expect(gpt.base_url).toContain('http');
+    expect(gpt.secret_handle).toBe('provider.openai.default');
+    expect(gpt.pricing).toEqual({ input: 0.75, output: 4.5 });
+    // the real models.yaml + model_routing.yaml validate together
+    expect(validateModelRegistryV2(models, routing).ok).toBe(true);
+  });
+
+  it('agents_route_by_self_chosen_name: routing uses bare model names from models.yaml', () => {
+    // model_routing.yaml routes by self-chosen name, not provider/model
+    expect(resolveModelNames(routing, 'developer', 'patch_generation')).toEqual(['deepseek-v4-pro']);
+    expect(resolveModelNames(routing, 'reviewer', 'generic')).toEqual(['gpt-5.4-mini']);
+    // a task override resolves to a model name too
+    expect(resolveModelNames(routing, 'developer', 'patch')).toEqual(['deepseek-v4-flash']);
+    // routing to an undeclared model name fails validation
+    const bad: RoutingConfig = { agents: { developer: { primary: 'no-such-model' } } };
+    const r = validateModelRegistryV2(models, bad);
+    expect(r.ok).toBe(false);
+    expect(r.errors.join(' ')).toMatch(/unknown model 'no-such-model'/);
+  });
+
+  it('gateway_resolves_by_model_name', () => {
+    expect(findModel('deepseek-v4-pro', models)!.name).toBe('deepseek-v4-pro');
+    expect(findModel('does-not-exist', models)).toBeNull();
+    // a cli-kind model needs a cli block; a non-cli needs base_url
+    const cliModels: ModelEntry[] = [{ name: 'codex-tool', kind: 'cli', cli: { driver: 'headless', command: 'codex' } }];
+    expect(validateModelRegistryV2(cliModels, { agents: { developer: { primary: 'codex-tool' } } }).ok).toBe(true);
+    const badCli: ModelEntry[] = [{ name: 'broken', kind: 'cli' } as ModelEntry];
+    expect(validateModelRegistryV2(badCli, { agents: {} }).ok).toBe(false);
+  });
+
+  it('live_cost_from_pricing_optional_unknown_if_absent', () => {
+    // priced model → live cost from the formula
+    const priced = computeModelCost(findModel('gpt-5.4-mini', models)!, { inputTokens: 1_000_000, outputTokens: 1_000_000 });
+    expect(priced.known).toBe(true);
+    expect((priced as any).usd).toBeCloseTo(0.75 + 4.5, 6);
+    // codex-subscription has no pricing → unknown, but tokens still counted at run level
+    const codex = findModel('codex-subscription', models)!;
+    expect(computeModelCost(codex, { inputTokens: 100, outputTokens: 100 }).known).toBe(false);
+    const run = computeRunCost([
+      { model: 'gpt-5.4-mini', inputTokens: 1_000_000, outputTokens: 0 },
+      { model: 'codex-subscription', inputTokens: 5000, outputTokens: 5000 },
+    ], models);
+    expect(run.known).toBe(false);            // a no-pricing model → overall cost unknown
+    expect(run.usd).toBeNull();
+    expect(run.tokens).toEqual({ input: 1_005_000, output: 5000 }); // tokens ALWAYS counted
+    expect(run.unknown_models).toContain('codex-subscription');
+    // cache discount is applied when cache_input is priced
+    const cached = computeModelCost({ name: 'm', kind: 'openai', base_url: 'x', pricing: { input: 1, output: 2, cache_input: 0.25 } },
+      { inputTokens: 1_000_000, outputTokens: 0, cachedTokens: 1_000_000 });
+    expect((cached as any).usd).toBeCloseTo(1 - 0.75, 6);
+  });
+});
+
+describe('settings-wiring-gateway', () => {
+  it('budgets_read_from_resolved_settings', () => {
+    const cfg = budgetConfigFromSettings({ ...DEFAULT_SETTINGS, budget: { max_calls_per_story: 10, max_tokens_per_story: 50000, max_calls_per_run: 100 } });
+    expect(cfg.maxCallsPerStory).toBe(10);
+    expect(cfg.maxTokensPerStory).toBe(50000);
+  });
+
+  it('behavior_unchanged_at_default_values', () => {
+    const cfg = budgetConfigFromSettings(DEFAULT_SETTINGS);
+    expect(cfg.maxCallsPerStory).toBe(30);
+    expect(cfg.maxTokensPerStory).toBe(400_000);
+  });
+
+  it('duplicate_caps_resolved_to_single_source', () => {
+    const s1 = budgetConfigFromSettings({ budget: { max_calls_per_story: 5, max_tokens_per_story: 100000, max_calls_per_run: 50 } });
+    const s2 = budgetConfigFromSettings({ budget: { max_calls_per_story: 20, max_tokens_per_story: 200000, max_calls_per_run: 200 } });
+    expect(s1.maxCallsPerStory).not.toBe(s2.maxCallsPerStory);
+    expect(s1.maxTokensPerStory).not.toBe(s2.maxTokensPerStory);
+  });
+});

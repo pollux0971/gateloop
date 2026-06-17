@@ -1,0 +1,49 @@
+{
+  "name": "gateloop-planning-pack",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run --passWithNoTests",
+    "typecheck": "tsc -b --pretty false",
+    "walk": "node --experimental-strip-types scripts/walking-skeleton.ts",
+    "test:all": "node --experimental-strip-types scripts/test-all.ts",
+    "test:until": "node --experimental-strip-types scripts/test-all.ts --until=L3",
+    "ci": "tsc -b --pretty false && node --experimental-strip-types scripts/test-all.ts"
+  },
+  "devDependencies": {
+    "@gateloop/agent-core": "workspace:*",
+    "@gateloop/agent-delegate": "workspace:*",
+    "@gateloop/agent-output": "workspace:*",
+    "@gateloop/assessor-runtime": "workspace:*",
+    "@gateloop/codegraph-adapter": "workspace:*",
+    "@gateloop/container-runtime": "workspace:*",
+    "@gateloop/developer-runtime": "workspace:*",
+    "@gateloop/supervisor-runtime": "workspace:*",
+    "@gateloop/codex-auth": "workspace:*",
+    "@gateloop/story-manager": "workspace:*",
+    "@gateloop/context-manager": "workspace:*",
+    "@gateloop/planning-steward": "workspace:*",
+    "@gateloop/task-graph": "workspace:*",
+    "@gateloop/debugger-runtime": "workspace:*",
+    "@gateloop/event-log": "workspace:*",
+    "@gateloop/failure-bank": "workspace:*",
+    "@gateloop/harness-core": "workspace:*",
+    "@gateloop/model-gateway": "workspace:*",
+    "@gateloop/permission-gateway": "workspace:*",
+    "@gateloop/preflight-runner": "workspace:*",
+    "@gateloop/reviewer-runtime": "workspace:*",
+    "@gateloop/settings": "workspace:*",
+    "@gateloop/shared": "workspace:*",
+    "@gateloop/skill-runtime": "workspace:*",
+    "@gateloop/tool-executor": "workspace:*",
+    "@gateloop/validator-suite": "workspace:*",
+    "@gateloop/workspace-manager": "workspace:*",
+    "@types/node": "^22.10.2",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.8"
+  },
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ]
+}

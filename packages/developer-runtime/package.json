@@ -1,0 +1,12 @@
+{
+  "name": "@gateloop/developer-runtime",
+  "version": "0.0.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@gateloop/agent-core": "workspace:*",
+    "@gateloop/model-gateway": "workspace:*"
+  }
+}
