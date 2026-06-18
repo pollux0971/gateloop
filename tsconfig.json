@@ -32,6 +32,9 @@
       "path": "packages/failure-bank"
     },
     {
+      "path": "packages/gate-control"
+    },
+    {
       "path": "packages/harness-core"
     },
     {

@@ -205,6 +205,8 @@ importers:
 
   packages/failure-bank: {}
 
+  packages/gate-control: {}
+
   packages/harness-core:
     dependencies:
       '@gateloop/settings':
