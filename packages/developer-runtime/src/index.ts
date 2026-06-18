@@ -60,6 +60,9 @@ export interface DeveloperTaskPacketView {
   acceptance_tests?: AcceptanceTestRef[];
   /** STORY-030.2: extra acceptance-test paths the Developer must not write. */
   acceptance_test_paths?: string[];
+  /** §1b: current content of files in scope, so a modify that strips existing
+   *  exported behavior can be detected before the proposal leaves the agent. */
+  current_files?: Record<string, string>;
   [k: string]: unknown;
 }
 
@@ -103,11 +106,73 @@ export function rejectDeveloperAuthoredAcceptanceTests(
   };
 }
 
-/** A single file edit. Additive-first: create/modify are additive; delete is destructive. */
+/** A single file edit. Additive-first: create/modify are additive; delete is destructive.
+ *  A `modify` is only additive if it does not REMOVE existing behavior (plan §1b / §C-3). */
 export interface ProposedEdit {
   path: string;
   operation: 'create' | 'modify' | 'delete';
   rationale?: string;
+  /** Full new file content (for create/modify). Needed to detect a modify that strips
+   *  existing behavior — the gap the operation==='delete' check alone misses. */
+  content?: string;
+}
+
+// ── §1b: non-additive `modify` detection (fixes the §C-3 gate hole) ──────────
+// The additive gate used to flag only operation==='delete'. A `modify` that drops
+// an earlier story's exported behavior (e.g. deletes the lines defining an exported
+// function) is NOT a delete, so it sailed through every static gate and shipped —
+// the deepseek S2-deletion root cause. This detects existing exported symbols that
+// a modify removes, so "delete behavior by rewriting the file" is caught pre-emit.
+
+/** Exported top-level symbol names declared in a source file. */
+function exportedSymbols(src: string): Set<string> {
+  const out = new Set<string>();
+  const re = /export\s+(?:async\s+)?(?:function|const|class|let|var)\s+([A-Za-z_$][\w$]*)/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(src)) !== null) out.add(m[1]);
+  // also `export { a, b }` re-export lists
+  const re2 = /export\s*\{([^}]*)\}/g;
+  while ((m = re2.exec(src)) !== null) {
+    for (const part of m[1].split(',')) {
+      const name = part.trim().split(/\s+as\s+/)[0].trim();
+      if (name) out.add(name);
+    }
+  }
+  return out;
+}
+
+/**
+ * §1b: exported behavior that a `modify` REMOVES — symbols present in the old file
+ * but gone from the new content. A non-empty result is a non-additive modify that
+ * the additive gate must reject (preserving existing behavior unless the story says
+ * otherwise). Returns the removed export names (formatted), empty when none removed.
+ */
+export function removedExistingBehavior(oldContent: string, newContent: string): string[] {
+  const oldSyms = exportedSymbols(oldContent);
+  const newSyms = exportedSymbols(newContent);
+  return [...oldSyms].filter(s => !newSyms.has(s)).map(s => `export ${s}`);
+}
+
+// ── §1c: the Developer system prompt (the work rules that never reached the model) ──
+// The inventory found the Developer's askModel call passed NO prompt, so the working
+// rules in docs/agents/03_DEVELOPER_AGENT.md (localize, additive-first, preserve
+// existing behavior, honor genes, pre-submit self-check) were never sent. This base
+// is now composed and sent on every Developer turn.
+
+/** The Developer's base system prompt — its working rules, sent on every turn (§1c). */
+export function developerSystemPromptBase(): string {
+  return [
+    'You are the Developer. Produce a single minimal, additive, reversible patch within the allowed write-set, plus initial tests.',
+    'Working rules:',
+    '1. Localize first — touch the smallest set of files; never write outside the write-set. If you need to, stop and report (do not self-widen).',
+    '2. Additive-first — prefer adding over rewriting; the smallest change that satisfies the acceptance criteria.',
+    '3. PRESERVE EXISTING BEHAVIOR — when you modify a shared file, keep every existing exported function and behavior intact. Additive at the LINE level: do not delete or weaken existing lines/behavior unless this story explicitly requires it. Removing existing behavior via a `modify` is a violation, not just a `delete`.',
+    '4. One concern per patch — do not bundle unrelated changes.',
+    '5. Reversible — provide rollback notes; keep all work in the workspace branch.',
+    '6. Honor failure genes — if AVOID warnings are injected, follow them.',
+    '7. You do not author your own acceptance tests, apply your own patch, merge, promote, read secrets, or mark the story done.',
+    'When blocked or unsure, emit a structured escalation instead of guessing.',
+  ].join('\n');
 }
 
 const CHANGE_TYPES = ['REBIND', 'INSERT_PREREQ', 'SUBSTITUTE', 'REWIRE', 'BYPASS', 'new_impl'] as const;
@@ -178,8 +243,14 @@ export async function producePatchProposal(
   const storyId = (packet.story_id as string) ?? 'unknown-story';
 
   // 1. Ask the model. askModel applies the same malformed-output rejection as fixtures.
+  //    §1c: send the Developer's working rules as a composed system prompt — previously
+  //    this call passed NO prompt, so the rules in 03_DEVELOPER_AGENT.md never reached
+  //    the model. composeSystemPrompt (via askModel) now folds them in on every turn.
   const res = await askModel(
-    { role: 'developer', taskClass: 'patch_generation', taskPacket: packet as Record<string, unknown>, storyId },
+    {
+      role: 'developer', taskClass: 'patch_generation', taskPacket: packet as Record<string, unknown>, storyId,
+      prompt: { base: developerSystemPromptBase() },
+    },
     deps,
   );
   if (!res.ok || !res.output) {
@@ -244,10 +315,25 @@ export async function producePatchProposal(
 
   // 5. Additive + reversible gates.
   const destructive = edits.filter((e) => e.operation === 'delete').map((e) => e.path);
-  const additive = destructive.length === 0;
+
+  // §1b (§C-3 fix): a `modify` that REMOVES existing exported behavior is non-additive
+  // even though it is not an operation==='delete'. Compare each modify's new content
+  // against the current file; any exported symbol that disappears is a violation.
+  const currentFiles = (packet.current_files ?? {}) as Record<string, string>;
+  const behaviorRemovals: string[] = [];
+  for (const e of edits) {
+    if (e.operation === 'delete') continue; // already covered by the delete check
+    const old = currentFiles[e.path];
+    if (old === undefined || typeof e.content !== 'string') continue; // new file / no content to compare
+    const removed = removedExistingBehavior(old, e.content);
+    if (removed.length) behaviorRemovals.push(`${e.path} removes existing ${removed.join(', ')}`);
+  }
+
+  const additive = destructive.length === 0 && behaviorRemovals.length === 0;
   const reversible = rollbackNotes.trim().length > 0;
   const gateErrors: string[] = [];
-  if (!additive) gateErrors.push(`proposal is not additive: deletes ${destructive.join(', ')}`);
+  if (destructive.length) gateErrors.push(`proposal is not additive: deletes ${destructive.join(', ')}`);
+  if (behaviorRemovals.length) gateErrors.push(`proposal is not additive: modify removes existing behavior — ${behaviorRemovals.join('; ')}`);
   if (!reversible) gateErrors.push('proposal is not reversible: missing rollback_notes');
   if (gateErrors.length) return { ok: false, errors: gateErrors, rejected_paths: [] };
 

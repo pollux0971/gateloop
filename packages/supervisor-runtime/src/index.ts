@@ -128,7 +128,19 @@ export interface DeveloperTaskPacket {
   rollback_requirement: { required: boolean; expected_content: string[] };
   context_packet: { include_refs: string[]; exclude_patterns: string[] };
   output_required: string[];
+  /** §1a: explicit preserve-existing-behavior directive. Always present (it must NOT
+   *  collapse into acceptance_criteria), so the Developer is always told to keep prior
+   *  behavior intact when modifying shared files. */
+  behavior_preservation: string[];
 }
+
+/** §1a: the always-present preserve-existing-behavior directive carried in every
+ *  Developer Task Packet (independent of whether the contract enumerated behaviors). */
+export const BEHAVIOR_PRESERVATION_DIRECTIVE: string[] = [
+  'Preserve ALL existing behavior in files you modify — be additive at the LINE level.',
+  'Do not remove, replace, or weaken existing exported functions or behavior unless THIS story explicitly requires it.',
+  'A `modify` that drops existing lines/behavior is a violation, not just a `delete` — the harness rejects it.',
+];
 
 /** A packet is never delivered with raw secrets, unrelated full logs, or whole-repo dumps. */
 export const DEFAULT_PACKET_EXCLUDE_PATTERNS: string[] = [
@@ -212,6 +224,7 @@ export function composeDeveloperTaskPacket(input: DeveloperPacketInput): Develop
       'no reading secrets/.env/credential files',
       'no sudo or privilege escalation',
       'no deleting or weakening existing tests',
+      'no removing existing behavior when modifying a shared file (additive at the line level)',
     ],
     required_files: {
       create: c.required_files?.create ?? [],
@@ -229,6 +242,8 @@ export function composeDeveloperTaskPacket(input: DeveloperPacketInput): Develop
       exclude_patterns: input.excludePatterns ?? DEFAULT_PACKET_EXCLUDE_PATTERNS,
     },
     output_required: input.outputRequired ?? DEFAULT_DEVELOPER_OUTPUT_REQUIRED,
+    // §1a: ALWAYS carry the preserve-existing-behavior directive (never collapse it).
+    behavior_preservation: BEHAVIOR_PRESERVATION_DIRECTIVE,
   };
 }
 // ── Debugger Task Packet composition (STORY-029.4) ───────────────────────────
