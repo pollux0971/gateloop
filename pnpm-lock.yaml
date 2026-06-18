@@ -302,6 +302,8 @@ importers:
 
   packages/tool-executor: {}
 
+  packages/tool-interface: {}
+
   packages/validator-suite:
     dependencies:
       '@gateloop/settings':
