@@ -352,6 +352,10 @@ export type GeneratedStory = {
   acceptance_intent: AcceptanceIntent;
   validation_commands: string[];
   rollback_notes: string[];
+  /** §3: the 7th contract element — the context packet (what the Developer is given,
+   *  what is excluded). Authored deterministically at planning time so every story is
+   *  development-ready with a complete contract before code begins. */
+  context_packet: { include_refs: string[]; exclude_patterns: string[] };
 };
 
 export type GeneratedBacklog = {
@@ -531,7 +535,7 @@ export function generateBacklogFromPlanningBundle(bundle: PlanningBundle): Gener
   const epics: GeneratedEpic[] = [];
   // Built without acceptance_intent, then finalized below (STORY-030.1) so the
   // intent is derived once from each story's acceptance_criteria.
-  const stories: Array<Omit<GeneratedStory, 'acceptance_intent'>> = [];
+  const stories: Array<Omit<GeneratedStory, 'acceptance_intent' | 'context_packet'>> = [];
 
   // Epic 01: Foundation
   const foundEpicId = `${prefix}-epic-${pad2(1)}`;
@@ -656,14 +660,71 @@ export function generateBacklogFromPlanningBundle(bundle: PlanningBundle): Gener
   const finalizedStories: GeneratedStory[] = stories.map(s => ({
     ...s,
     acceptance_intent: deriveAcceptanceIntent(s.acceptance_criteria),
+    // §3: author the 7th contract element deterministically, so every story is
+    // development-ready with a COMPLETE contract before any code exists.
+    context_packet: buildStoryContextPacket(s),
   }));
   assertStoriesCarryAcceptanceIntent(finalizedStories);
+  // §3 bundle gate: the generator can never emit a story with an incomplete contract.
+  assertStoriesCarryFullContract(finalizedStories);
 
   return {
     source_bundle_id: prefix,
     epics,
     stories: finalizedStories,
   };
+}
+
+// ── §3: Contract-first — the 7th element (context packet) + full-contract gate ──
+// Planning is the Contract Compiler: every story must carry a COMPLETE contract
+// (objective · acceptance_intent · allowed_write_set · forbidden_actions ·
+// validation_commands · rollback_notes · context_packet) before development. The
+// context packet is authored deterministically here (no LLM); the full-contract
+// gate rejects any story missing an element — "legislate before executing".
+
+/** Secrets / noise never handed to a Developer in a context packet. */
+export const CONTEXT_EXCLUDE_PATTERNS: string[] = [
+  '**/.env*', '**/*secret*', '**/*.key', '**/credentials*', '~/.codex/auth.json',
+  '**/node_modules/**', 'unrelated-full-logs', 'other-work-private-traces',
+];
+
+/** Deterministically author a story's context packet (the 7th contract element). */
+export function buildStoryContextPacket(story: { story_id: string; epic_id: string }): { include_refs: string[]; exclude_patterns: string[] } {
+  return {
+    include_refs: [`story_contract:${story.story_id}`, `epic:${story.epic_id}`],
+    exclude_patterns: [...CONTEXT_EXCLUDE_PATTERNS],
+  };
+}
+
+/** The seven contract elements every development-ready story must carry. */
+export const CONTRACT_ELEMENTS = [
+  'objective', 'acceptance_intent', 'allowed_write_set', 'forbidden_actions',
+  'validation_commands', 'rollback_notes', 'context_packet',
+] as const;
+
+/** §3: return the contract elements a story is MISSING ([] = complete & development-ready). */
+export function validateStoryContractComplete(story: Partial<GeneratedStory>): string[] {
+  const missing: string[] = [];
+  if (typeof story.objective !== 'string' || !story.objective.trim()) missing.push('objective');
+  if (!story.acceptance_intent || validateAcceptanceIntent(story.acceptance_intent).errors.length > 0) missing.push('acceptance_intent');
+  if (!Array.isArray(story.allowed_write_set) || story.allowed_write_set.length === 0) missing.push('allowed_write_set');
+  if (!Array.isArray(story.forbidden_actions) || story.forbidden_actions.length === 0) missing.push('forbidden_actions');
+  if (!Array.isArray(story.validation_commands) || story.validation_commands.length === 0) missing.push('validation_commands');
+  if (!Array.isArray(story.rollback_notes) || story.rollback_notes.length === 0) missing.push('rollback_notes');
+  const cp = story.context_packet;
+  if (!cp || !Array.isArray(cp.include_refs) || cp.include_refs.length === 0 || !Array.isArray(cp.exclude_patterns)) missing.push('context_packet');
+  return missing;
+}
+
+/** §3 bundle gate: reject emission if any story lacks a complete 7-element contract.
+ *  Mirrors assertStoriesCarryAcceptanceIntent — throws on the first incomplete story. */
+export function assertStoriesCarryFullContract(stories: Array<Partial<GeneratedStory> & { story_id: string }>): void {
+  for (const s of stories) {
+    const missing = validateStoryContractComplete(s);
+    if (missing.length > 0) {
+      throw new Error(`bundle_gate: story ${s.story_id} has an incomplete contract — missing: ${missing.join(', ')}`);
+    }
+  }
 }
 
 /** Build the story DAG from a planning bundle. Returns StoryNode[] for scheduler use. */
