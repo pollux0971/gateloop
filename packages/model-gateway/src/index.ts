@@ -585,6 +585,13 @@ export interface ModelEntry {
   /** Operator's own label; agents route by this. */
   name: string;
   kind: ModelKind;
+  /** Optional human display name of the supplier (distinct from `kind`). */
+  vendor?: string;
+  /** Optional free-text: what the model is good at. Read by the deterministic router. */
+  description?: string;
+  /** Optional structured strengths the deterministic router selects on
+   *  (e.g. 'code-generation', 'debugging', 'planning', 'review', 'assessment'). */
+  capabilities?: string[];
   base_url?: string;
   secret_handle?: string;
   pricing?: ModelPricing;

@@ -121,6 +121,12 @@ export type ModelKind = 'openai' | 'openai_responses_codex' | 'anthropic' | 'cli
 export interface ModelRow {
   name: string;
   kind: ModelKind;
+  /** Human display name of the supplier (distinct from `kind`, the adapter type). */
+  vendor?: string;
+  /** Free-text: what the model is good at (router reads this; shown in the table). */
+  description?: string;
+  /** Structured strengths the deterministic router selects on. */
+  capabilities?: string[];
   base_url?: string;
   pricing?: { input?: number; output?: number; cache_input?: number };
   limit?: number;
@@ -209,12 +215,14 @@ export function ModelRegistryTable(props: ModelRegistryTableProps): JSX.Element 
     <div data-testid="model-registry-table">
       <h3 style={{ fontSize: 12, fontWeight: 600, marginBottom: 8 }}>Models</h3>
       <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-        <thead><tr><th style={th}>Name</th><th style={th}>Kind</th><th style={th}>Base URL</th><th style={th}>Pricing $/1M (in/out)</th><th style={th}>Limit</th></tr></thead>
+        <thead><tr><th style={th}>Name</th><th style={th}>Vendor</th><th style={th}>Description (router reads this)</th><th style={th}>Capabilities</th><th style={th}>Base URL</th><th style={th}>Pricing $/1M (in/out)</th><th style={th}>Limit</th></tr></thead>
         <tbody>
           {apiModels.map(m => (
             <tr key={m.name} data-model-name={m.name}>
               <td style={td}>{m.name}</td>
-              <td style={td}>{m.kind}</td>
+              <td style={td}>{m.vendor ?? m.kind}</td>
+              <td style={td} data-model-description={m.name}>{m.description ?? '—'}</td>
+              <td style={td}>{m.capabilities?.length ? m.capabilities.join(', ') : '—'}</td>
               <td style={td}>{m.base_url ?? '—'}</td>
               <td style={td}>{m.pricing?.input !== undefined ? `${m.pricing.input}/${m.pricing.output ?? '?'}` : 'unknown'}</td>
               <td style={td}>{m.limit ?? '—'}</td>

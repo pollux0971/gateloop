@@ -11,29 +11,41 @@ models:
   # ---- judgement / assessment tier (strong, cross-model from the cheap coder) ----
   - name: gpt-5.4-mini
     kind: openai
+    vendor: OpenAI
     base_url: https://api.openai.com/v1
     secret_handle: provider.openai.default
     pricing: { input: 0.75, output: 4.50 }      # $ / 1M tokens
     limit: 500                                   # req/min — feeds rate-limit scheduling, not cost
+    description: Fast, strong judgement. Good for planning, review and assessment; small outputs keep it cheap.
+    capabilities: [planning, review, assessment, supervision]
 
   # ---- code generation tier (cheap; downstream debug + review catch errors) ----
   - name: deepseek-v4-pro
     kind: openai                                  # OpenAI-compatible endpoint
+    vendor: DeepSeek
     base_url: https://api.deepseek.com
     secret_handle: provider.deepseek.default
     pricing: { input: 0.435, output: 0.87 }
+    description: Strong code generation and debugging at low cost; the default coder for medium/large work.
+    capabilities: [code-generation, debugging]
 
   - name: deepseek-v4-flash
     kind: openai
+    vendor: DeepSeek
     base_url: https://api.deepseek.com
     secret_handle: provider.deepseek.default
     pricing: { input: 0.14, output: 0.28 }
+    description: Cheapest coder; fine for trivial/small changes where downstream debug+review catch errors.
+    capabilities: [code-generation]
 
   # ---- Codex via ChatGPT subscription (OAuth) — no per-token pricing ----
   - name: codex-subscription
     kind: openai_responses_codex
+    vendor: OpenAI (Codex)
     base_url: https://chatgpt.com/backend-api/codex/responses
     secret_handle: provider.codex.oauth
+    description: Codex via ChatGPT subscription; capable coder billed against the subscription (per-token cost unknown).
+    capabilities: [code-generation, debugging]
     # no `pricing` → billed against the subscription; per-token cost is "unknown"
     # (tokens are still counted; the gateway never guesses a price).
 

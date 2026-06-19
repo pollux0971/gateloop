@@ -21,6 +21,13 @@
             "enum": ["openai", "openai_responses_codex", "anthropic", "cli"],
             "description": "Adapter kind. cli = external CLI tool (EPIC-033)."
           },
+          "vendor": { "type": "string", "description": "Optional human display name of the supplier (e.g. 'OpenAI', 'DeepSeek'), distinct from `kind` (the adapter type)." },
+          "description": { "type": "string", "description": "Optional free-text: what this model is good at. Read by the deterministic router and shown in the registry UI." },
+          "capabilities": {
+            "type": "array",
+            "description": "Optional structured strengths the deterministic router selects on, e.g. ['code-generation','debugging','planning','review','assessment'].",
+            "items": { "type": "string" }
+          },
           "base_url": { "type": "string", "description": "Endpoint base URL (auto-filled per kind, or manual). Not required for kind: cli." },
           "secret_handle": { "type": "string", "description": "Secret Broker handle for the credential — never the value itself." },
           "pricing": {
