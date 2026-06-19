@@ -8,6 +8,9 @@
       "path": "packages/agent-output"
     },
     {
+      "path": "packages/external-agent"
+    },
+    {
       "path": "packages/codegraph-adapter"
     },
     {

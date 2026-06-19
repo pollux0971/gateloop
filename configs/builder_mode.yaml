@@ -1,0 +1,7 @@
+# Builder execution mode (EPIC-034 / STORY-034.2).
+#   agent_mode (default, fail-safe): API model acting only through the ACI tool interface.
+#   cli_mode: delegate the story to an external CLI agent (Claude Code) in a controlled,
+#             isolated bash sandbox, routed through EPIC-033's ExternalAgentDriver.
+# cli_mode is opt-in and gated (real-CLI spend is behind STORY-034.5 + the human barrier).
+# Anything other than an explicit "cli_mode" resolves to agent_mode (selectBuilderMode).
+default_mode: agent_mode
