@@ -38,6 +38,9 @@
       "path": "packages/harness-core"
     },
     {
+      "path": "packages/secret-broker"
+    },
+    {
       "path": "packages/model-gateway"
     },
     {

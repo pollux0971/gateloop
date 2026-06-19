@@ -118,7 +118,9 @@ export function isGatedAllowed(state: GateState, env: { CI?: string } = {}): Gat
  *  (or would be crossed by the run's estimate). */
 export class BudgetLedger {
   private spentUsd: number;
-  constructor(private ceilingUsd: number, initialSpentUsd = 0) {
+  private ceilingUsd: number;
+  constructor(ceilingUsd: number, initialSpentUsd = 0) {
+    this.ceilingUsd = ceilingUsd;
     this.spentUsd = initialSpentUsd;
   }
   canStart(estimateUsd = 0): GateDecision {
@@ -141,7 +143,8 @@ export class TokenCapGuard {
   private total = 0;
   private isKilled = false;
   private reason = '';
-  constructor(private cap: number) {}
+  private cap: number;
+  constructor(cap: number) { this.cap = cap; }
   /** Record usage; returns true while under cap, false once the cap is hit (caller stops). */
   record(tokens: number): boolean {
     this.total += tokens;

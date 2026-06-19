@@ -71,7 +71,9 @@ export interface InvokeResult<O = unknown> { ok: boolean; output?: O; error?: st
  */
 export class ToolInterface {
   private tools = new Map<string, ToolDefinition>();
-  constructor(defs: ToolDefinition[], private grants: ToolGrants) {
+  private grants: ToolGrants;
+  constructor(defs: ToolDefinition[], grants: ToolGrants) {
+    this.grants = grants;
     for (const d of defs) this.tools.set(d.name, { enabled: true, ...d });
   }
 

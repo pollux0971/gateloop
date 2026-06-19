@@ -44,6 +44,9 @@ importers:
       '@gateloop/failure-bank':
         specifier: workspace:*
         version: link:packages/failure-bank
+      '@gateloop/gate-control':
+        specifier: workspace:*
+        version: link:packages/gate-control
       '@gateloop/harness-core':
         specifier: workspace:*
         version: link:packages/harness-core
@@ -62,6 +65,9 @@ importers:
       '@gateloop/reviewer-runtime':
         specifier: workspace:*
         version: link:packages/reviewer-runtime
+      '@gateloop/secret-broker':
+        specifier: workspace:*
+        version: link:packages/secret-broker
       '@gateloop/settings':
         specifier: workspace:*
         version: link:packages/settings
@@ -83,6 +89,9 @@ importers:
       '@gateloop/tool-executor':
         specifier: workspace:*
         version: link:packages/tool-executor
+      '@gateloop/tool-interface':
+        specifier: workspace:*
+        version: link:packages/tool-interface
       '@gateloop/validator-suite':
         specifier: workspace:*
         version: link:packages/validator-suite
@@ -257,6 +266,8 @@ importers:
       vitest:
         specifier: ^2
         version: 2.1.9(@types/node@22.19.20)(@vitest/ui@2.1.9)(jsdom@24.1.3)(lightningcss@1.32.0)
+
+  packages/secret-broker: {}
 
   packages/settings:
     dependencies:
