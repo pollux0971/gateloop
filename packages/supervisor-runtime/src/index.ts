@@ -86,6 +86,48 @@ export interface StoryContractForPacket {
   validation_commands?: string[];
   required_files?: { create?: string[]; update?: string[]; do_not_touch?: string[] };
   rollback_notes?: string;
+  /** WORK 3a: deterministic complexity tier (a router signal). */
+  estimated_complexity?: 'trivial' | 'small' | 'medium' | 'large' | 'xlarge';
+}
+
+// ── WORK B: deterministic task signals (domain + context need) for the router ──
+// Inferred from the contract (write-set + complexity) with pure rules — NOT an LLM —
+// so the Supervisor stays 0 askModel and the signals are reproducible. The router
+// (WORK C) matches these against each model's capabilities/context_window.
+
+/** Task domains a story touches, inferred from its write-set paths. */
+export function inferTaskDomains(writeSet: string[] = []): string[] {
+  const isFrontend = (p: string) => /\.(tsx|jsx|css|scss|html)$/.test(p) || /(^|\/)apps\/web\//.test(p) || /(^|\/)(components|ui|pages)\//i.test(p);
+  const isBackend = (p: string) => /\.(ts|mjs|cjs|js|py|go|rs)$/.test(p) && !/\.(tsx|jsx)$/.test(p)
+    || /(^|\/)(packages|apps\/api|server|src\/api|services)\//.test(p);
+  const domains = new Set<string>();
+  for (const p of writeSet) {
+    if (isFrontend(p)) domains.add('frontend');
+    if (isBackend(p)) domains.add('backend');
+  }
+  // Default to backend when nothing matched (most product code is backend logic).
+  if (domains.size === 0) domains.add('backend');
+  return [...domains].sort();
+}
+
+/**
+ * Whether a task needs a large context scan (cross-file refactor / whole-codebase
+ * analysis). Deterministic: a wide write-set OR a large/xlarge complexity tier.
+ */
+export function inferNeedsLongContext(input: { writeSet?: string[]; estimated_complexity?: string }): boolean {
+  const files = input.writeSet?.length ?? 0;
+  const big = input.estimated_complexity === 'large' || input.estimated_complexity === 'xlarge';
+  return files >= 4 || big;
+}
+
+export interface TaskSignals { domains: string[]; needs_long_context: boolean }
+
+/** The full deterministic task-signal bundle the router consumes. */
+export function inferTaskSignals(c: { allowed_write_set?: string[]; estimated_complexity?: string }): TaskSignals {
+  return {
+    domains: inferTaskDomains(c.allowed_write_set),
+    needs_long_context: inferNeedsLongContext({ writeSet: c.allowed_write_set, estimated_complexity: c.estimated_complexity }),
+  };
 }
 
 /** Minimal shape of a matching failure-bank warning. Structurally compatible with
@@ -132,6 +174,8 @@ export interface DeveloperTaskPacket {
    *  collapse into acceptance_criteria), so the Developer is always told to keep prior
    *  behavior intact when modifying shared files. */
   behavior_preservation: string[];
+  /** WORK B: deterministic task signals (domain + context need) the router consumes. */
+  task_signals: TaskSignals;
 }
 
 /** §1a: the always-present preserve-existing-behavior directive carried in every
@@ -244,6 +288,8 @@ export function composeDeveloperTaskPacket(input: DeveloperPacketInput): Develop
     output_required: input.outputRequired ?? DEFAULT_DEVELOPER_OUTPUT_REQUIRED,
     // §1a: ALWAYS carry the preserve-existing-behavior directive (never collapse it).
     behavior_preservation: BEHAVIOR_PRESERVATION_DIRECTIVE,
+    // WORK B: deterministic task signals for the router (domain + context need).
+    task_signals: inferTaskSignals({ allowed_write_set: c.allowed_write_set, estimated_complexity: c.estimated_complexity }),
   };
 }
 // ── Debugger Task Packet composition (STORY-029.4) ───────────────────────────
