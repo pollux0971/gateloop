@@ -11,6 +11,7 @@
  */
 
 export * from './headlessDriver';
+export * from './acpDriver';
 export * from './delegationSandbox';
 export * from './entryGate';
 export * from './delegationResult';
