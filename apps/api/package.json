@@ -6,7 +6,8 @@
     "dev": "tsx src/index.ts"
   },
   "dependencies": {
-    "fastify": "latest"
+    "fastify": "latest",
+    "yaml": "latest"
   },
   "devDependencies": {
     "tsx": "latest"

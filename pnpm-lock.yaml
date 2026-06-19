@@ -113,6 +113,9 @@ importers:
       fastify:
         specifier: latest
         version: 5.8.5
+      yaml:
+        specifier: latest
+        version: 2.9.0
     devDependencies:
       tsx:
         specifier: latest

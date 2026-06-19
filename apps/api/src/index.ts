@@ -2,6 +2,7 @@ import Fastify from 'fastify';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { readModels, readRouting, routingRows, applyRoutingUpdate } from './registry';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(__dirname, '../../..');            // gateloop/
@@ -75,5 +76,16 @@ app.get('/api/platform', async () => ({
   name: 'GateLoop', agents: AGENTS.length, packages: loadPackages().length,
   skills: loadSkills().length, states: STATE_MACHINE.length,
 }));
+
+// ── Model registry + agent→model routing (UI WORK 2) ──────────────────────────
+// Config endpoints: read the live models.yaml + model_routing.yaml and let the
+// operator reassign an agent's model. NEVER touches real_api_calls or a secret value.
+app.get('/api/models', async () => ({ models: readModels(REPO), routing: routingRows(readRouting(REPO)) }));
+app.get('/api/routing', async () => ({ agents: routingRows(readRouting(REPO)) }));
+app.put('/api/routing', async (req: any, reply) => {
+  const { agent, model } = (req.body ?? {}) as { agent?: string; model?: string };
+  const r = applyRoutingUpdate(REPO, agent ?? '', model ?? '');
+  return r.ok ? { ok: true, agent, model } : reply.code(400).send({ error: r.error });
+});
 
 app.listen({ port: 8787, host: '127.0.0.1' }).catch(err => { app.log.error(err); process.exit(1); });

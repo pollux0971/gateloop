@@ -7,6 +7,7 @@ import { PipelineBoardSection } from './PipelineBoardSection';
 import { IdeaIntake } from './IdeaIntake';
 import { HealthDashboard, type BudgetSnapshot, type GateConfig, type GateAuditEntry } from './HealthDashboard';
 import { ProjectPreview, type ProjectFile, type FileDiff, type PromotionHistoryEntry } from './ProjectPreview';
+import { ApiPage } from './ApiPage';
 import { MOCK_TRACE_EVENTS } from './mockTrace';
 
 const API = (import.meta as any).env?.VITE_API ?? 'http://127.0.0.1:8787';
@@ -47,6 +48,14 @@ const j = (p: string) => fetch(API + p).then(r => r.json());
 export function App() {
   const [d, setD] = useState<any>(null);
   const [err, setErr] = useState<string>('');
+  const [tab, setTab] = useState<'cockpit' | 'models'>('cockpit');
+  // Live model registry + agent→model routing (UI WORK 2) — fetched from /api/models.
+  const [registry, setRegistry] = useState<{ models: any[]; routing: { agent: string; model: string }[] } | null>(null);
+  const loadRegistry = () => j('/api/models').then(setRegistry).catch(() => {});
+  const onRouteChange = async (agent: string, model: string) => {
+    await fetch(API + '/api/routing', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ agent, model }) });
+    loadRegistry();
+  };
   useEffect(() => {
     (async () => {
       try {
@@ -60,6 +69,7 @@ export function App() {
         setD({ platform, skills: skills.skills, agents: agents.agents, packages: packages.packages, plugins: plugins.plugins, escalations: escalations.escalations, conv, stateMachine: stm.states });
       } catch (e: any) { setErr('Cannot reach the GateLoop API at ' + API + '. Start it with: pnpm --filter @gateloop/api dev'); }
     })();
+    loadRegistry();
   }, []);
 
   const wrap = { fontFamily: 'Inter, system-ui, sans-serif', background: '#0E1620', color: '#E6EDF3', minHeight: '100vh' } as const;
@@ -78,7 +88,20 @@ export function App() {
           )}
         </div>
         {d?.stateMachine && <LifecycleRail states={d.stateMachine} />}
+        <nav style={{ display: 'flex', gap: 8, marginTop: 10 }} data-testid="cockpit-nav">
+          {(['cockpit', 'models'] as const).map(t => (
+            <button key={t} onClick={() => setTab(t)} data-testid={`nav-${t}`}
+              style={{ ...mono, fontSize: 12, padding: '4px 12px', borderRadius: 6, cursor: 'pointer',
+                background: tab === t ? '#18242F' : 'transparent', color: tab === t ? '#5BD6C0' : 'rgba(230,237,243,.56)',
+                border: '1px solid rgba(230,237,243,.1)' }}>
+              {t === 'cockpit' ? 'Cockpit' : 'Models & Routing'}
+            </button>
+          ))}
+        </nav>
       </header>
+      {tab === 'models' ? (
+        <ApiPage modelRegistry={{ models: registry?.models ?? [], routing: registry?.routing ?? [], onRouteChange }} />
+      ) : (<>
       {/* Idea intake form — collapsed behind toggle */}
       <IdeaIntakeToggle />
       {/* Pipeline board — story cards over state-machine lanes; hosts the admission
@@ -202,6 +225,7 @@ export function App() {
           </>}
         </section>
       </div>
+      </>)}
     </main>
   );
 }
