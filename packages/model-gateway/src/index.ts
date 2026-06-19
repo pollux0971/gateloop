@@ -658,6 +658,96 @@ export function resolveModelNames(routing: RoutingConfig, agent: string, taskCla
   return [cfg.primary, ...(cfg.fallbacks ?? [])];
 }
 
+// ── WORK 3c: the deterministic router ────────────────────────────────────────
+// Pick a model for a task from the registry DETERMINISTICALLY (no LLM, reproducible)
+// using the WORK 1 capabilities + pricing and the WORK 3a complexity signal:
+//   capable = models whose capabilities include the task's required capability;
+//   large/xlarge → the STRONGEST capable model (proxy: highest output price);
+//   trivial/small/medium → the CHEAPEST capable model.
+// Same inputs → same model. The decision (with reason) is returned so the caller can
+// write it to the trace for audit. Off by default at the call site (static routing
+// stays the fallback) — see resolveModelWithRouter.
+
+export type TaskComplexity = 'trivial' | 'small' | 'medium' | 'large' | 'xlarge';
+
+export interface RouterDecision {
+  model: string;
+  reason: string;
+  complexity: TaskComplexity;
+  required_capability: string;
+  /** Candidate model names considered (capability-matched), for audit. */
+  considered: string[];
+}
+
+export interface SelectModelInput {
+  complexity: TaskComplexity;
+  /** Capability the task needs, e.g. 'code-generation' or 'debugging'. */
+  required_capability: string;
+  models: ModelEntry[];
+}
+
+/** Deterministically select a model for a task. Returns null if nothing is capable. */
+export function selectModelForTask(input: SelectModelInput): RouterDecision | null {
+  const capable = input.models.filter(
+    m => m.kind !== 'cli' && (m.capabilities ?? []).includes(input.required_capability),
+  );
+  if (capable.length === 0) return null;
+  const considered = capable.map(m => m.name).sort();
+  const wantStrong = input.complexity === 'large' || input.complexity === 'xlarge';
+  // Rank by output price (known); unknown price is deprioritized either way.
+  const sorted = [...capable].sort((a, b) => {
+    const pa = a.pricing?.output ?? (wantStrong ? -1 : Number.POSITIVE_INFINITY);
+    const pb = b.pricing?.output ?? (wantStrong ? -1 : Number.POSITIVE_INFINITY);
+    if (pa !== pb) return wantStrong ? pb - pa : pa - pb;   // strong → desc, cheap → asc
+    return a.name.localeCompare(b.name);                    // deterministic tie-break
+  });
+  const chosen = sorted[0];
+  const tier = wantStrong ? 'strongest' : 'cheapest';
+  return {
+    model: chosen.name,
+    reason: `${input.complexity} + '${input.required_capability}' → ${tier} capable model '${chosen.name}' (output $${chosen.pricing?.output ?? '?'} /1M)`,
+    complexity: input.complexity,
+    required_capability: input.required_capability,
+    considered,
+  };
+}
+
+export interface RouteWithRouterOptions {
+  /** Off by default: when false (or no complexity), fall back to static resolveModelNames. */
+  routerEnabled?: boolean;
+  complexity?: TaskComplexity;
+  required_capability?: string;
+  models?: ModelEntry[];
+}
+
+export interface RouteResult {
+  /** The resolved model names (primary first), as the gateway expects. */
+  names: string[];
+  /** The router's decision when it fired; undefined when static routing was used. */
+  decision?: RouterDecision;
+  source: 'router' | 'static';
+}
+
+/**
+ * Opt-in router: when enabled AND given a complexity + capability + registry, picks the
+ * model deterministically and returns it first (static fallbacks appended). Otherwise
+ * returns the static resolveModelNames result unchanged. Never throws — a router miss
+ * (no capable model) cleanly falls back to static, so routing never fails closed.
+ */
+export function resolveModelWithRouter(
+  routing: RoutingConfig, agent: string, taskClass: string, opts: RouteWithRouterOptions = {},
+): RouteResult {
+  const staticNames = resolveModelNames(routing, agent, taskClass);
+  if (!opts.routerEnabled || !opts.complexity || !opts.required_capability || !opts.models) {
+    return { names: staticNames, source: 'static' };
+  }
+  const decision = selectModelForTask({ complexity: opts.complexity, required_capability: opts.required_capability, models: opts.models });
+  if (!decision) return { names: staticNames, source: 'static' };
+  // Router pick first; keep the static fallbacks (minus a duplicate) behind it.
+  const names = [decision.model, ...staticNames.filter(n => n !== decision.model)];
+  return { names, decision, source: 'router' };
+}
+
 // ── Live cost estimation from per-model pricing (STORY-032.6) ─────────────────
 
 export interface ModelTokenUsage {

@@ -356,7 +356,29 @@ export type GeneratedStory = {
    *  what is excluded). Authored deterministically at planning time so every story is
    *  development-ready with a complete contract before code begins. */
   context_packet: { include_refs: string[]; exclude_patterns: string[] };
+  /** WORK 3a: deterministically-estimated complexity — the signal the deterministic
+   *  router uses to pick a model. Authored here (no LLM), so it is reproducible. */
+  estimated_complexity: StoryComplexity;
 };
+
+/** Story complexity tiers (mirror specs/story_contract.schema.json estimated_complexity). */
+export type StoryComplexity = 'trivial' | 'small' | 'medium' | 'large' | 'xlarge';
+
+/**
+ * WORK 3a: estimate a story's complexity DETERMINISTICALLY (no LLM) from observable
+ * contract size — files in the write-set and the number of acceptance behaviors.
+ * Same inputs → same tier, so the router's choice is reproducible.
+ */
+export function estimateStoryComplexity(input: { allowed_write_set?: string[]; behaviorCount?: number }): StoryComplexity {
+  const files = input.allowed_write_set?.length ?? 0;
+  const behaviors = input.behaviorCount ?? 0;
+  const score = files * 2 + behaviors;
+  if (score <= 2) return 'trivial';
+  if (score <= 5) return 'small';
+  if (score <= 9) return 'medium';
+  if (score <= 14) return 'large';
+  return 'xlarge';
+}
 
 export type GeneratedBacklog = {
   source_bundle_id: string;
@@ -535,7 +557,7 @@ export function generateBacklogFromPlanningBundle(bundle: PlanningBundle): Gener
   const epics: GeneratedEpic[] = [];
   // Built without acceptance_intent, then finalized below (STORY-030.1) so the
   // intent is derived once from each story's acceptance_criteria.
-  const stories: Array<Omit<GeneratedStory, 'acceptance_intent' | 'context_packet'>> = [];
+  const stories: Array<Omit<GeneratedStory, 'acceptance_intent' | 'context_packet' | 'estimated_complexity'>> = [];
 
   // Epic 01: Foundation
   const foundEpicId = `${prefix}-epic-${pad2(1)}`;
@@ -657,13 +679,21 @@ export function generateBacklogFromPlanningBundle(bundle: PlanningBundle): Gener
   // STORY-030.1: finalize every story with a testable acceptance_intent derived
   // from its acceptance_criteria, then self-check via the bundle gate so the
   // generator can never emit a backlog whose stories lack machine-checkable intent.
-  const finalizedStories: GeneratedStory[] = stories.map(s => ({
-    ...s,
-    acceptance_intent: deriveAcceptanceIntent(s.acceptance_criteria),
-    // §3: author the 7th contract element deterministically, so every story is
-    // development-ready with a COMPLETE contract before any code exists.
-    context_packet: buildStoryContextPacket(s),
-  }));
+  const finalizedStories: GeneratedStory[] = stories.map(s => {
+    const acceptance_intent = deriveAcceptanceIntent(s.acceptance_criteria);
+    return {
+      ...s,
+      acceptance_intent,
+      // §3: author the 7th contract element deterministically, so every story is
+      // development-ready with a COMPLETE contract before any code exists.
+      context_packet: buildStoryContextPacket(s),
+      // WORK 3a: deterministic complexity signal for the router.
+      estimated_complexity: estimateStoryComplexity({
+        allowed_write_set: s.allowed_write_set,
+        behaviorCount: acceptance_intent.behaviors.length,
+      }),
+    };
+  });
   assertStoriesCarryAcceptanceIntent(finalizedStories);
   // §3 bundle gate: the generator can never emit a story with an incomplete contract.
   assertStoriesCarryFullContract(finalizedStories);
