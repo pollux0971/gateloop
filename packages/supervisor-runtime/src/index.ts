@@ -176,6 +176,8 @@ export interface DeveloperTaskPacket {
   behavior_preservation: string[];
   /** WORK B: deterministic task signals (domain + context need) the router consumes. */
   task_signals: TaskSignals;
+  /** WORK 3a: complexity tier carried on the packet so the router can read it. */
+  estimated_complexity?: 'trivial' | 'small' | 'medium' | 'large' | 'xlarge';
 }
 
 /** §1a: the always-present preserve-existing-behavior directive carried in every
@@ -290,6 +292,7 @@ export function composeDeveloperTaskPacket(input: DeveloperPacketInput): Develop
     behavior_preservation: BEHAVIOR_PRESERVATION_DIRECTIVE,
     // WORK B: deterministic task signals for the router (domain + context need).
     task_signals: inferTaskSignals({ allowed_write_set: c.allowed_write_set, estimated_complexity: c.estimated_complexity }),
+    ...(c.estimated_complexity !== undefined ? { estimated_complexity: c.estimated_complexity } : {}),
   };
 }
 // ── Debugger Task Packet composition (STORY-029.4) ───────────────────────────

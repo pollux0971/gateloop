@@ -715,6 +715,103 @@ export function selectModelForTask(input: SelectModelInput): RouterDecision | nu
   };
 }
 
+// ── WORK C: multi-dimensional cost-adjusted router (P(success) − λ·cost) ──────
+// Theory (2512.04469, Eq.15): an agent system maximizes P(a_g|c); the multi-agent
+// free parameter is the task packet P(c_L|a_L), and the cost-adjusted objective is
+//   Maximize over models of [ P(success | task, model) − λ · cost(model) ].
+// We estimate P(success) DETERMINISTICALLY from three matches (complexity, domain,
+// context), multiply them, and subtract a normalized cost weighted by λ. Pure: same
+// task + registry + λ → same model. The per-candidate scores are returned for the trace.
+//
+// Safety-net note (why cheap models are viable): Observe (pre-submit test run), the
+// regression gate, and the exit gate CATCH a cheap model's mistakes and force a
+// correction — that RAISES a cheap model's effective P(success), shifting the optimum
+// of (P − λ·cost) toward cheaper models. That is the mathematical reason a
+// cheap-model-plus-safety-net configuration is sound. (Modeled here as a modest boost.)
+
+const COMPLEXITY_NEED: Record<TaskComplexity, number> = { trivial: 0, small: 0.25, medium: 0.5, large: 0.75, xlarge: 1 };
+const SAFETY_NET_BOOST = 0.15;        // gates/Observe raise a weak model's effective success
+const LONG_CONTEXT_TOKENS = 100_000;  // a model qualifies for long-context at/above this window
+
+export interface MultiDimTask {
+  complexity: TaskComplexity;
+  /** The capability candidacy filter — 'code-generation' (developer) | 'debugging' (debugger). */
+  required_capability: string;
+  /** Task domains the router prefers a model to cover (penalty, not a hard filter). */
+  domains?: string[];
+  /** True when the task needs a large context scan. */
+  needs_long_context?: boolean;
+}
+
+export interface ModelScore {
+  model: string;
+  p_success: number;   // estimated P(success | task, model), 0..1
+  cost: number;        // cost proxy ($/1M output; unknown penalized)
+  norm_cost: number;   // cost normalized across candidates, 0..1
+  score: number;       // P − λ·norm_cost
+}
+
+export interface RouterDecisionV2 {
+  model: string;
+  /** Auditable, plain explanation of why this model won (→ trace; UI translates it). */
+  rationale: string;
+  lambda: number;
+  scores: ModelScore[];
+}
+
+/** Normalized strength (0..1) of a model among candidates, by output price (proxy). */
+function strengthOf(m: ModelEntry, candidates: ModelEntry[]): number {
+  const prices = candidates.map(c => c.pricing?.output).filter((p): p is number => p !== undefined);
+  const p = m.pricing?.output;
+  if (p === undefined) return 0.5;                 // unknown price → median strength
+  if (prices.length === 0) return 1;
+  const min = Math.min(...prices), max = Math.max(...prices);
+  return max === min ? 1 : (p - min) / (max - min);
+}
+
+function isLongContextCapable(m: ModelEntry): boolean {
+  return (m.capabilities ?? []).includes('long-context') || (m.context_window ?? 0) >= LONG_CONTEXT_TOKENS;
+}
+
+/**
+ * WORK C: pick a model maximizing P(success) − λ·cost over the registry. Returns null
+ * if no model has the required capability. Deterministic; rationale + scores for audit.
+ */
+export function selectModelCostAdjusted(task: MultiDimTask, models: ModelEntry[], lambda: number): RouterDecisionV2 | null {
+  const candidates = models.filter(m => m.kind !== 'cli' && (m.capabilities ?? []).includes(task.required_capability));
+  if (candidates.length === 0) return null;
+
+  const knownCosts = candidates.map(c => c.pricing?.output).filter((p): p is number => p !== undefined);
+  const maxKnown = knownCosts.length ? Math.max(...knownCosts) : 1;
+  const costOf = (m: ModelEntry) => m.pricing?.output ?? maxKnown * 1.5;   // unknown price penalized
+  const maxCost = Math.max(...candidates.map(costOf));
+
+  const need = COMPLEXITY_NEED[task.complexity];
+  const scores: ModelScore[] = candidates.map(m => {
+    const strength = strengthOf(m, candidates);
+    // complexity match: strong-enough → 1; weaker → partial, lifted by the safety-net boost.
+    const pComplexity = Math.min(1, (strength >= need ? 1 : 0.6 + 0.4 * (need ? strength / need : 1)) + SAFETY_NET_BOOST);
+    // domain match: covers a needed domain → 1; task has domains but model covers none → 0.75.
+    const domainsNeeded = task.domains ?? [];
+    const covers = domainsNeeded.length === 0 || domainsNeeded.some(d => (m.capabilities ?? []).includes(d));
+    const pDomain = covers ? 1 : 0.75;
+    // context match: needs long context but model can't → 0.5; otherwise 1.
+    const pContext = task.needs_long_context ? (isLongContextCapable(m) ? 1 : 0.5) : 1;
+    const p_success = pComplexity * pDomain * pContext;
+    const cost = costOf(m);
+    const norm_cost = maxCost === 0 ? 0 : cost / maxCost;
+    return { model: m.name, p_success, cost, norm_cost, score: p_success - lambda * norm_cost };
+  });
+
+  // Highest score wins; deterministic tie-break by name.
+  scores.sort((a, b) => (b.score - a.score) || a.model.localeCompare(b.model));
+  const win = scores[0];
+  const rationale =
+    `picked '${win.model}': P(success)≈${win.p_success.toFixed(2)}, cost≈$${win.cost.toFixed(2)}/1M, ` +
+    `score=${win.score.toFixed(2)} (λ=${lambda}) over [${scores.slice(1).map(s => `${s.model}=${s.score.toFixed(2)}`).join(', ') || 'no other capable model'}]`;
+  return { model: win.model, rationale, lambda, scores };
+}
+
 export interface RouteWithRouterOptions {
   /** Off by default: when false (or no complexity), fall back to static resolveModelNames. */
   routerEnabled?: boolean;
@@ -749,6 +846,52 @@ export function resolveModelWithRouter(
   // Router pick first; keep the static fallbacks (minus a duplicate) behind it.
   const names = [decision.model, ...staticNames.filter(n => n !== decision.model)];
   return { names, decision, source: 'router' };
+}
+
+export interface MultiDimRouteOptions {
+  /** Off by default → static routing (the WORK 3 fallback; never fails closed). */
+  routerEnabled?: boolean;
+  task?: MultiDimTask;
+  models?: ModelEntry[];
+  /** Cost weight λ (the UI's save-money↔reliable slider). Default 0.5 (balanced). */
+  lambda?: number;
+}
+
+export interface RouteResultV2 {
+  names: string[];
+  decision?: RouterDecisionV2;
+  source: 'router' | 'static';
+}
+
+/**
+ * WORK C call point (used in the Supervisor's packet-composition flow): resolve an
+ * agent's model with the multi-dimensional cost-adjusted router. Opt-in — off, or a
+ * router miss, cleanly returns the static routing. The chosen model goes first; the
+ * static fallbacks stay behind it. Deterministic; never throws.
+ */
+export function resolveModelMultiDim(
+  routing: RoutingConfig, agent: string, taskClass: string, opts: MultiDimRouteOptions = {},
+): RouteResultV2 {
+  const staticNames = resolveModelNames(routing, agent, taskClass);
+  if (!opts.routerEnabled || !opts.task || !opts.models) return { names: staticNames, source: 'static' };
+  const decision = selectModelCostAdjusted(opts.task, opts.models, opts.lambda ?? 0.5);
+  if (!decision) return { names: staticNames, source: 'static' };
+  return { names: [decision.model, ...staticNames.filter(n => n !== decision.model)], decision, source: 'router' };
+}
+
+/** Build the router's MultiDimTask from a composed developer/debugger task packet
+ *  (reads WORK B task_signals + WORK 3a complexity). target_agent → required capability. */
+export function multiDimTaskFromPacket(packet: {
+  target_agent?: string;
+  estimated_complexity?: TaskComplexity;
+  task_signals?: { domains?: string[]; needs_long_context?: boolean };
+}): MultiDimTask {
+  return {
+    complexity: packet.estimated_complexity ?? 'medium',
+    required_capability: packet.target_agent === 'debugger' ? 'debugging' : 'code-generation',
+    domains: packet.task_signals?.domains,
+    needs_long_context: packet.task_signals?.needs_long_context,
+  };
 }
 
 // ── Live cost estimation from per-model pricing (STORY-032.6) ─────────────────
