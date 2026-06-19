@@ -29,6 +29,9 @@ import {
 } from '@gateloop/agent-delegate';
 import { decideDelegationOutcome, type DelegationOutcomeDecision } from '@gateloop/harness-core';
 
+// Controlled-bash bridge (STORY-034.3).
+export * from './controlledBash';
+
 // ── Mode selection ───────────────────────────────────────────────────────────────
 
 export type BuilderMode = 'agent_mode' | 'cli_mode';

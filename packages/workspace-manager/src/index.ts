@@ -109,6 +109,18 @@ export function collectDiff(ws: WorkspaceManifest): string {
   return git(ws.root, ['diff']);
 }
 
+/**
+ * Authoritative diff of the whole working tree vs the last commit (the pre-delegation
+ * tree) — INCLUDING new/untracked files (which `git diff` alone omits). Stages everything
+ * first, then diffs the index against HEAD. Used by the controlled-bash bridge (034.3) to
+ * compute the delegation diff vs the pre-delegation snapshot, so an external agent's new
+ * files are not silently dropped.
+ */
+export function collectDiffAgainstHead(ws: WorkspaceManifest): string {
+  git(ws.root, ['add', '-A']);
+  return git(ws.root, ['diff', '--cached', 'HEAD']);
+}
+
 /** Destroy the workspace directory and unregister it. */
 export function cleanupWorkspace(registry: WorkspaceRegistry, ws: WorkspaceManifest): void {
   fs.rmSync(ws.root, { recursive: true, force: true });

@@ -14,6 +14,7 @@
   ],
   "references": [
     { "path": "../agent-delegate" },
-    { "path": "../harness-core" }
+    { "path": "../harness-core" },
+    { "path": "../workspace-manager" }
   ]
 }
