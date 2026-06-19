@@ -1,0 +1,6 @@
+# Deterministic router config (UI WORK D).
+#   enabled = use the multi-dimensional router (off → existing static agent→model routing).
+#   mode    = the operator's preference; mapped to the router's cost weight internally.
+#             The UI shows only "Save money / Balanced / Reliable" — never the weight or formula.
+enabled: false
+mode: balanced   # save-money | balanced | reliable

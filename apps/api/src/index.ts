@@ -2,7 +2,7 @@ import Fastify from 'fastify';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { readModels, readRouting, routingRows, applyRoutingUpdate } from './registry';
+import { readModels, readRouting, routingRows, applyRoutingUpdate, readRouterConfig, applyRouterConfig } from './registry';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(__dirname, '../../..');            // gateloop/
@@ -107,6 +107,13 @@ app.put('/api/routing', async (req: any, reply) => {
   const { agent, model } = (req.body ?? {}) as { agent?: string; model?: string };
   const r = applyRoutingUpdate(REPO, agent ?? '', model ?? '');
   return r.ok ? { ok: true, agent, model } : reply.code(400).send({ error: r.error });
+});
+
+// Router config (UI WORK D): on/off + plain-language mode (no λ exposed).
+app.get('/api/router-config', async () => readRouterConfig(REPO));
+app.put('/api/router-config', async (req: any, reply) => {
+  const r = applyRouterConfig(REPO, (req.body ?? {}) as { enabled?: boolean; mode?: any });
+  return r.ok ? r.config : reply.code(400).send({ error: r.error });
 });
 
 app.listen({ port: 8787, host: '127.0.0.1' }).catch(err => { app.log.error(err); process.exit(1); });

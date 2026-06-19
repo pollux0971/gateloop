@@ -51,10 +51,16 @@ export function App() {
   const [tab, setTab] = useState<'cockpit' | 'models'>('cockpit');
   // Live model registry + agent→model routing (UI WORK 2) — fetched from /api/models.
   const [registry, setRegistry] = useState<{ models: any[]; routing: { agent: string; model: string }[] } | null>(null);
+  const [routerCfg, setRouterCfg] = useState<{ enabled: boolean; mode: 'save-money' | 'balanced' | 'reliable' }>({ enabled: false, mode: 'balanced' });
   const loadRegistry = () => j('/api/models').then(setRegistry).catch(() => {});
+  const loadRouterCfg = () => j('/api/router-config').then(setRouterCfg).catch(() => {});
   const onRouteChange = async (agent: string, model: string) => {
     await fetch(API + '/api/routing', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ agent, model }) });
     loadRegistry();
+  };
+  const onRouterChange = async (next: { enabled?: boolean; mode?: 'save-money' | 'balanced' | 'reliable' }) => {
+    const updated = await fetch(API + '/api/router-config', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(next) }).then(r => r.json()).catch(() => null);
+    if (updated) setRouterCfg(updated); else loadRouterCfg();
   };
   useEffect(() => {
     (async () => {
@@ -70,6 +76,7 @@ export function App() {
       } catch (e: any) { setErr('Cannot reach the GateLoop API at ' + API + '. Start it with: pnpm --filter @gateloop/api dev'); }
     })();
     loadRegistry();
+    loadRouterCfg();
   }, []);
 
   const wrap = { fontFamily: 'Inter, system-ui, sans-serif', background: '#0E1620', color: '#E6EDF3', minHeight: '100vh' } as const;
@@ -100,7 +107,10 @@ export function App() {
         </nav>
       </header>
       {tab === 'models' ? (
-        <ApiPage modelRegistry={{ models: registry?.models ?? [], routing: registry?.routing ?? [], onRouteChange }} />
+        <ApiPage
+          router={{ enabled: routerCfg.enabled, mode: routerCfg.mode, onChange: onRouterChange }}
+          modelRegistry={{ models: registry?.models ?? [], routing: registry?.routing ?? [], onRouteChange }}
+        />
       ) : (<>
       {/* Idea intake form — collapsed behind toggle */}
       <IdeaIntakeToggle />

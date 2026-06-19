@@ -317,15 +317,57 @@ export function ModelRegistryTable(props: ModelRegistryTableProps): JSX.Element 
   );
 }
 
+// ── Smart routing control (UI WORK D) — plain language, NO math/λ/formula ─────
+export type RouterMode = 'save-money' | 'balanced' | 'reliable';
+export interface RouterControlProps {
+  enabled: boolean;
+  mode: RouterMode;
+  onChange?: (next: { enabled?: boolean; mode?: RouterMode }) => void;
+}
+const MODE_LABEL: Record<RouterMode, string> = { 'save-money': 'Save money', balanced: 'Balanced', reliable: 'Reliable' };
+
+/** Plain-language explanation of a router choice — never exposes P(success)/λ/score. */
+export function routerChoicePhrase(story: string, model: string, complexity?: string): string {
+  const ease = complexity === 'trivial' || complexity === 'small' ? 'a simpler'
+    : complexity === 'large' || complexity === 'xlarge' ? 'a heavier' : 'this';
+  return `${story} is ${ease} task → handled by ${model}`;
+}
+
+export function RouterControl(props: RouterControlProps): JSX.Element {
+  const { enabled, mode, onChange } = props;
+  const btn = (active: boolean) => ({
+    fontFamily: 'JetBrains Mono, monospace', fontSize: 12, padding: '4px 12px', borderRadius: 6, cursor: 'pointer',
+    background: active ? '#18242F' : 'transparent', color: active ? '#5BD6C0' : 'rgba(230,237,243,.56)',
+    border: '1px solid rgba(230,237,243,.1)',
+  });
+  return (
+    <div data-testid="router-control" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12 }}>
+        <input type="checkbox" data-testid="router-enabled" checked={enabled} onChange={e => onChange?.({ enabled: e.target.checked })} />
+        Smart model routing <span style={{ color: 'rgba(230,237,243,.4)' }}>— pick the model per task automatically</span>
+      </label>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, opacity: enabled ? 1 : 0.4 }}>
+        <span style={{ fontSize: 11, color: 'rgba(230,237,243,.4)' }}>cheaper ←</span>
+        {(['save-money', 'balanced', 'reliable'] as RouterMode[]).map(m => (
+          <button key={m} data-testid={`router-mode-${m}`} disabled={!enabled}
+            onClick={() => onChange?.({ mode: m })} style={btn(mode === m)}>{MODE_LABEL[m]}</button>
+        ))}
+        <span style={{ fontSize: 11, color: 'rgba(230,237,243,.4)' }}>→ safer</span>
+      </div>
+    </div>
+  );
+}
+
 export interface ApiPageProps {
   tierHistory?: AttemptTierEntry[];
   shadowEval?: ShadowEvalEntry[];
   wizard?: EnablementWizardProps;
   modelRegistry?: ModelRegistryTableProps;
+  router?: RouterControlProps;
 }
 
 export function ApiPage(props: ApiPageProps): JSX.Element {
-  const { tierHistory, shadowEval, wizard, modelRegistry } = props;
+  const { tierHistory, shadowEval, wizard, modelRegistry, router } = props;
 
   const style = {
     page: { fontFamily: 'JetBrains Mono, monospace', fontSize: 12, padding: 16, display: 'flex', flexDirection: 'column' as const, gap: 24 },
@@ -334,6 +376,7 @@ export function ApiPage(props: ApiPageProps): JSX.Element {
   return (
     <div data-testid="api-page" style={style.page}>
       <h2 style={{ fontSize: 14, fontWeight: 600, marginBottom: 0 }}>API</h2>
+      {router && <RouterControl {...router} />}
       {modelRegistry && <ModelRegistryTable {...modelRegistry} />}
       {tierHistory && <TierHistory entries={tierHistory} />}
       {shadowEval && <ShadowEvalPanel results={shadowEval} />}

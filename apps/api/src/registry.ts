@@ -44,6 +44,39 @@ export function routingRows(routing: { agents?: Record<string, { primary?: strin
   return Object.entries(routing?.agents ?? {}).map(([agent, cfg]) => ({ agent, model: cfg?.primary ?? '' }));
 }
 
+// ── Router config (UI WORK D) — enabled + a plain-language mode (λ stays internal) ──
+export type RouterMode = 'save-money' | 'balanced' | 'reliable';
+export interface RouterConfig { enabled: boolean; mode: RouterMode }
+
+const LAMBDA_BY_MODE: Record<RouterMode, number> = { 'save-money': 1.2, balanced: 0.5, reliable: 0.1 };
+/** Map the operator's plain-language mode to the router's cost weight λ (never shown in UI). */
+export function lambdaForMode(mode: RouterMode): number { return LAMBDA_BY_MODE[mode] ?? 0.5; }
+
+const routerConfigPath = (repo: string) => path.join(repo, 'configs', 'router_config.yaml');
+
+export function readRouterConfig(repo: string): RouterConfig {
+  try {
+    const y = parseYaml(fs.readFileSync(routerConfigPath(repo), 'utf8')) as { enabled?: boolean; mode?: string };
+    const mode = (['save-money', 'balanced', 'reliable'] as string[]).includes(y?.mode ?? '') ? (y!.mode as RouterMode) : 'balanced';
+    return { enabled: Boolean(y?.enabled), mode };
+  } catch { return { enabled: false, mode: 'balanced' }; }
+}
+
+export interface RouterConfigUpdate { enabled?: boolean; mode?: RouterMode }
+/** Update router config in place (comments preserved); rejects an invalid mode. */
+export function applyRouterConfig(repo: string, update: RouterConfigUpdate): { ok: boolean; error?: string; config?: RouterConfig } {
+  const cur = readRouterConfig(repo);
+  const next: RouterConfig = { enabled: update.enabled ?? cur.enabled, mode: update.mode ?? cur.mode };
+  if (!(['save-money', 'balanced', 'reliable'] as string[]).includes(next.mode)) {
+    return { ok: false, error: `invalid mode: ${next.mode}` };
+  }
+  const doc = parseDocument(fs.readFileSync(routerConfigPath(repo), 'utf8'));
+  doc.set('enabled', next.enabled);
+  doc.set('mode', next.mode);
+  fs.writeFileSync(routerConfigPath(repo), String(doc));
+  return { ok: true, config: next };
+}
+
 export interface RoutingUpdateResult { ok: boolean; error?: string }
 
 /**
