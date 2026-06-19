@@ -18,6 +18,7 @@ models:
     limit: 500                                   # req/min — feeds rate-limit scheduling, not cost
     description: Fast, strong judgement. Good for planning, review and assessment; small outputs keep it cheap.
     capabilities: [planning, review, assessment, supervision]
+    context_window: 256000
 
   # ---- code generation tier (cheap; downstream debug + review catch errors) ----
   - name: deepseek-v4-pro
@@ -26,8 +27,9 @@ models:
     base_url: https://api.deepseek.com
     secret_handle: provider.deepseek.default
     pricing: { input: 0.435, output: 0.87 }
-    description: Strong code generation and debugging at low cost; the default coder for medium/large work.
-    capabilities: [code-generation, debugging]
+    description: Strong code generation and debugging at low cost; the default coder for medium/large backend work.
+    capabilities: [code-generation, debugging, backend]
+    context_window: 128000
 
   - name: deepseek-v4-flash
     kind: openai
@@ -35,8 +37,9 @@ models:
     base_url: https://api.deepseek.com
     secret_handle: provider.deepseek.default
     pricing: { input: 0.14, output: 0.28 }
-    description: Cheapest coder; fine for trivial/small changes where downstream debug+review catch errors.
-    capabilities: [code-generation]
+    description: Cheapest coder; fine for trivial/small frontend/UI and simple changes where downstream debug+review catch errors.
+    capabilities: [code-generation, frontend]
+    context_window: 64000
 
   # ---- Codex via ChatGPT subscription (OAuth) — no per-token pricing ----
   - name: codex-subscription
@@ -44,8 +47,9 @@ models:
     vendor: OpenAI (Codex)
     base_url: https://chatgpt.com/backend-api/codex/responses
     secret_handle: provider.codex.oauth
-    description: Codex via ChatGPT subscription; capable coder billed against the subscription (per-token cost unknown).
-    capabilities: [code-generation, debugging]
+    description: Codex via ChatGPT subscription; capable coder with a large context for whole-codebase analysis (per-token cost unknown).
+    capabilities: [code-generation, debugging, backend, long-context]
+    context_window: 256000
     # no `pricing` → billed against the subscription; per-token cost is "unknown"
     # (tokens are still counted; the gateway never guesses a price).
 

@@ -25,9 +25,10 @@
           "description": { "type": "string", "description": "Optional free-text: what this model is good at. Read by the deterministic router and shown in the registry UI." },
           "capabilities": {
             "type": "array",
-            "description": "Optional structured strengths the deterministic router selects on, e.g. ['code-generation','debugging','planning','review','assessment'].",
+            "description": "Optional structured strengths the deterministic router matches against the task: domain (e.g. 'frontend','backend'), kind ('code-generation','debugging','planning','review','assessment'), and 'long-context' for whole-codebase analysis.",
             "items": { "type": "string" }
           },
+          "context_window": { "type": "number", "minimum": 0, "description": "Optional max context tokens. The router uses this for tasks that need a large scan (e.g. cross-file refactor, dependency analysis)." },
           "base_url": { "type": "string", "description": "Endpoint base URL (auto-filled per kind, or manual). Not required for kind: cli." },
           "secret_handle": { "type": "string", "description": "Secret Broker handle for the credential — never the value itself." },
           "pricing": {

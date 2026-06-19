@@ -589,9 +589,12 @@ export interface ModelEntry {
   vendor?: string;
   /** Optional free-text: what the model is good at. Read by the deterministic router. */
   description?: string;
-  /** Optional structured strengths the deterministic router selects on
-   *  (e.g. 'code-generation', 'debugging', 'planning', 'review', 'assessment'). */
+  /** Optional structured strengths the deterministic router matches against the task:
+   *  domain ('frontend','backend'), kind ('code-generation','debugging','planning',
+   *  'review','assessment'), and 'long-context' for whole-codebase analysis. */
   capabilities?: string[];
+  /** Optional max context tokens — the router uses it for tasks needing a large scan. */
+  context_window?: number;
   base_url?: string;
   secret_handle?: string;
   pricing?: ModelPricing;

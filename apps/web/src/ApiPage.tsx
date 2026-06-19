@@ -127,6 +127,8 @@ export interface ModelRow {
   description?: string;
   /** Structured strengths the deterministic router selects on. */
   capabilities?: string[];
+  /** Max context tokens — used for tasks needing a large scan. */
+  context_window?: number;
   base_url?: string;
   pricing?: { input?: number; output?: number; cache_input?: number };
   limit?: number;
@@ -160,6 +162,23 @@ const BASE_URL_BY_KIND: Record<string, string> = {
   openai_responses_codex: 'https://chatgpt.com/backend-api/codex/responses',
   anthropic: 'https://api.anthropic.com',
 };
+
+// Plain-language labels for capabilities — the operator never sees raw enum strings.
+const CAPABILITY_LABEL: Record<string, string> = {
+  'code-generation': 'writes code',
+  'debugging': 'debugging',
+  'backend': 'backend logic',
+  'frontend': 'frontend / UI',
+  'long-context': 'whole-codebase analysis',
+  'planning': 'planning',
+  'review': 'review',
+  'assessment': 'assessment',
+  'supervision': 'supervision',
+};
+export function capabilityPhrase(caps?: string[]): string {
+  if (!caps?.length) return '—';
+  return caps.map(c => CAPABILITY_LABEL[c] ?? c).join(', ');
+}
 
 export function ModelRegistryTable(props: ModelRegistryTableProps): JSX.Element {
   const { models, routing, onAddModel, onAddCli, onRouteChange } = props;
@@ -215,14 +234,15 @@ export function ModelRegistryTable(props: ModelRegistryTableProps): JSX.Element 
     <div data-testid="model-registry-table">
       <h3 style={{ fontSize: 12, fontWeight: 600, marginBottom: 8 }}>Models</h3>
       <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-        <thead><tr><th style={th}>Name</th><th style={th}>Vendor</th><th style={th}>Description (router reads this)</th><th style={th}>Capabilities</th><th style={th}>Base URL</th><th style={th}>Pricing $/1M (in/out)</th><th style={th}>Limit</th></tr></thead>
+        <thead><tr><th style={th}>Name</th><th style={th}>Vendor</th><th style={th}>Description</th><th style={th}>Good at</th><th style={th}>Context</th><th style={th}>Base URL</th><th style={th}>Pricing $/1M (in/out)</th><th style={th}>Limit</th></tr></thead>
         <tbody>
           {apiModels.map(m => (
             <tr key={m.name} data-model-name={m.name}>
               <td style={td}>{m.name}</td>
               <td style={td}>{m.vendor ?? m.kind}</td>
               <td style={td} data-model-description={m.name}>{m.description ?? '—'}</td>
-              <td style={td}>{m.capabilities?.length ? m.capabilities.join(', ') : '—'}</td>
+              <td style={td} data-model-goodat={m.name}>{capabilityPhrase(m.capabilities)}</td>
+              <td style={td}>{m.context_window ? `${Math.round(m.context_window / 1000)}k` : '—'}</td>
               <td style={td}>{m.base_url ?? '—'}</td>
               <td style={td}>{m.pricing?.input !== undefined ? `${m.pricing.input}/${m.pricing.output ?? '?'}` : 'unknown'}</td>
               <td style={td}>{m.limit ?? '—'}</td>
