@@ -72,6 +72,27 @@ app.get('/api/conversations/:runId', async (req: any, reply) => {
 });
 app.get('/api/escalations', async () => readFixture('escalations.json'));
 
+// ── Trace: live event stream for the cockpit (UI WORK 4) ──────────────────────
+// Returns a TraceEvent[] array the TraceViewer polls in live mode (no more baked-in
+// MOCK_TRACE_EVENTS in the frontend). A real run's trace can be wired via the
+// GATELOOP_TRACE env (a JSON array of TraceEvent); otherwise a representative fixture
+// (showing an Observe catch + self-correct) is served. Supports ?story_id & ?type filters.
+app.get('/api/trace', async (req: any) => {
+  let events: any[];
+  const tracePath = process.env.GATELOOP_TRACE;
+  if (tracePath && fs.existsSync(tracePath)) {
+    events = JSON.parse(fs.readFileSync(tracePath, 'utf8'));
+  } else {
+    events = readFixture('trace.json');
+  }
+  const q = req.query ?? {};
+  const story = q.story_id as string | undefined;
+  const types = ([] as string[]).concat(q.type ?? []);
+  return events.filter((e: any) =>
+    (!story || e.story_id === story) && (types.length === 0 || types.includes(e.type) || types.includes(e.event_type)),
+  );
+});
+
 app.get('/api/platform', async () => ({
   name: 'GateLoop', agents: AGENTS.length, packages: loadPackages().length,
   skills: loadSkills().length, states: STATE_MACHINE.length,

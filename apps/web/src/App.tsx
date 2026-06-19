@@ -80,7 +80,7 @@ export function App() {
     <main style={wrap} data-testid="cockpit-shell">
       <header style={{ padding: '14px 22px', borderBottom: '1px solid rgba(230,237,243,.1)' }}>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 14, flexWrap: 'wrap' as const }}>
-          <span style={{ fontWeight: 700 }}>Code<span style={{ color: '#5BD6C0' }}>Harness</span> · Cockpit</span>
+          <span style={{ fontWeight: 700 }}>Gate<span style={{ color: '#5BD6C0' }}>Loop</span> · Cockpit</span>
           {d && (
             <span style={{ ...mono, fontSize: 12, color: 'rgba(230,237,243,.56)' }}>
               {d.platform.agents} agents · {d.platform.packages} packages · {d.platform.skills} skills · {d.platform.states} states

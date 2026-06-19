@@ -1,0 +1,32 @@
+[
+  {
+    "event_id": "evt-001", "type": "story_started", "event_type": "story_started",
+    "story_id": "S4", "agent_role": "supervisor", "seq": 0, "recorded_at": "2026-06-19T09:28:00Z",
+    "payload": { "action": "dispatched_to_developer", "estimated_complexity": "large" },
+    "summary": "S4 dispatched to developer (complexity: large)"
+  },
+  {
+    "event_id": "evt-002", "type": "patch_proposal", "event_type": "patch_proposal",
+    "story_id": "S4", "agent_role": "developer", "seq": 1, "recorded_at": "2026-06-19T09:28:30Z",
+    "payload": { "changed_files": ["tasks.mjs"], "ok": true },
+    "summary": "Developer proposed a patch to tasks.mjs"
+  },
+  {
+    "event_id": "evt-003", "type": "developer_preflight", "event_type": "developer_preflight",
+    "story_id": "S4", "agent_role": "developer", "seq": 2, "recorded_at": "2026-06-19T09:28:40Z",
+    "payload": { "attempt": 0, "prior_tests": 13, "passed": false, "failing_tests": ["cli_list_prints_tasks_with_id_and_done_marker"], "verdict": "self_correct" },
+    "summary": "Observe: preflight RED — patch broke a prior behavior (cli_list); self-correcting"
+  },
+  {
+    "event_id": "evt-004", "type": "developer_preflight", "event_type": "developer_preflight",
+    "story_id": "S4", "agent_role": "developer", "seq": 3, "recorded_at": "2026-06-19T09:29:10Z",
+    "payload": { "attempt": 1, "prior_tests": 13, "passed": true, "failing_tests": [], "verdict": "submit" },
+    "summary": "Observe: preflight GREEN — self-corrected patch preserves prior behavior"
+  },
+  {
+    "event_id": "evt-005", "type": "checkpoint", "event_type": "checkpoint",
+    "story_id": "S4", "agent_role": "developer", "seq": 4, "recorded_at": "2026-06-19T09:29:40Z",
+    "payload": { "handoff_card_valid": true },
+    "summary": "Checkpoint reached: S4 delivered, all prior behavior intact"
+  }
+]
