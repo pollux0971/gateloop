@@ -32,6 +32,9 @@ import { decideDelegationOutcome, type DelegationOutcomeDecision } from '@gatelo
 // Controlled-bash bridge (STORY-034.3).
 export * from './controlledBash';
 
+// Sandbox isolation invariants — the 034.5 barrier (STORY-034.4).
+export * from './isolation';
+
 // ── Mode selection ───────────────────────────────────────────────────────────────
 
 export type BuilderMode = 'agent_mode' | 'cli_mode';
