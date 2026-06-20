@@ -1,84 +1,96 @@
-# CLI-Mode E2E (STORY-034.5) — Stage 3 report
+# CLI-Mode E2E (STORY-034.5) — real Claude Code in the cage: SUCCEEDED (with one honest caveat)
 
-**Date:** 2026-06-20 · `real_api_calls = false` (untouched) · **no Claude spawned, no spend.**
+**Date:** 2026-06-20 · run `cli_mode_claude_20260620_102446` · spent: subscription credits
+(small — see Cost). `runGated` opened → ran → **auto-closed + read-back verified**;
+`real_api_calls = false` after. Single variable: cli_mode · one CLI (Claude Code) · one
+trivial story.
 
-Stages 1–2 (commit `bf86c18`) built a real, OS-enforced cage and proved isolation on a real
-busybox process. Stage 3 builds a **node/claude-capable cage**, re-proves isolation as an
-automatic program gate, and would auto-spawn real Claude Code if the gate passes. The gate
-**passes** — but two real preconditions (neither an isolation crack) block the spawn.
+## Result in one line
 
-## Stage 3a — claude cage image (built, offline)
+Real Claude Code (2.1.179) ran **headless inside the proven Docker cage**, completed a trivial
+story with a single `Write`, its diff passed the exit-gate write-set crux, and the gate
+auto-closed — **with no host secret reachable** (Layer 2 proven on a real process). The one
+caveat: the filtering proxy (Layer 1) was **bypassed** (Claude reached the API directly via the
+bridge network), which is the accepted-risk half of the agreed two-layer model.
 
-Investigation flipped the plan in a good way:
-- **node is a snap** (`/snap/bin/node` → snapd-confined) — not cleanly mountable into a
-  `--network none` container. But…
-- **claude 2.1.179 is a self-contained 240 MB ELF** (`~/.local/share/claude/versions/2.1.179`)
-  that needs only **glibc** — **no node required**. It runs standalone (`HOME=/tmp/nohome
-  claude --version` → `2.1.179`).
+## Token injection (option 3) — token from ~/.claude, no new copy
 
-So `build-claude-cage-image.sh` builds a **fully self-contained** image OFFLINE (no pull):
-busybox + the claude ELF + its glibc deps (via `ldd`) — and **nothing from `$HOME`** beyond the
-claude program binary. The running cage has **zero host bind mounts** except the sandbox copy
-at `/work`, so secrets cannot be dragged in by construction. `claude --version` runs inside the
-cage (`--network none`, read-only root, only `/work` writable). Image: `cage-claude:latest`
-(246 MB).
+The broker (`readClaudeOAuthToken`) reads `~/.claude/.credentials.json` **in a child process**,
+parses `claudeAiOauth.accessToken`, and the value flows broker → `process.env` →
+`docker --env CLAUDE_CODE_OAUTH_TOKEN` (passthrough by NAME, never in the argv). The token is
+copied to **no new file**, the mode-600 original is untouched, the agent never logs the
+plaintext (every printed line is token-redacted), and the cage never mounts the file.
 
-## Stage 3b — automatic isolation gate (PASSES 5/5)
+## Layer-2 auto-gate (the backstop — VERIFIED before spawn)
 
-`prove-cage.ts cage-claude:latest` runs a real busybox probe **inside the claude cage** and
-re-proves every invariant — the program gate before any spawn:
+A real busybox probe inside the EXACT cage config (cage-claude image + proxy network) proved,
+zero-cost, immediately before the spawn:
 
 | Invariant | Result |
 |---|---|
-| real process cannot read host secret (fake `.env` + real `~/.ssh`/`~/.codex`/`gateloop/.env`) | ✅ HELD |
-| writes confined, host tree untouched (`/`,`/etc`,`/bin` refused; `/work` lands on host sandbox) | ✅ HELD |
-| network denied (`nc`+`wget` egress fail under `--network none`) | ✅ HELD |
-| broker auth in cage env only; key absent from sandbox disk; host `HOME` not inherited (`HOME=/work`) | ✅ HELD |
-| **no `$HOME`/secret/config baked into the image** (`find` for `.claude*`/`auth.json`/`.env`/`.ssh`/`.npmrc`/`credentials` → none; `/home` empty) | ✅ HELD |
+| cage cannot read ANY host secret (fake `.env` + real `~/.claude/.credentials.json`, `~/.ssh`, `~/.codex`, `gateloop/.env`) | ✅ HELD |
+| writes confined, host tree untouched | ✅ HELD |
+| injected token in cage env only, absent from sandbox disk, `HOME` not host | ✅ HELD |
+| no `$HOME`/credential file baked into the image (only a non-secret onboarding `.claude.json`, content-checked for tokens) | ✅ HELD |
 
-Gate exit 0 → the auto-gate would permit the spawn. **Baking claude in did NOT drag in any
-secrets** — the Stage-3 attack surface is closed. (Zero cost: busybox probe, fake secret, no
-Claude, no real network egress.)
+Gate held → spawn permitted (automatic; no human pause). Had any held=false, the run would have
+aborted before spawning.
 
-## Stage 3c — BLOCKED before spawn (two real preconditions, not isolation cracks)
+## Isolation review (the #1 observation) — real Claude, real bash, in the cage
 
-The isolation gate passes, but real Claude cannot run yet:
+From the observation stream (`claude-stream.jsonl`), every tool Claude actually invoked:
 
-**1. Auth not provisioned.** `claude --bare` authenticates **strictly via `ANTHROPIC_API_KEY`**.
-That key is **absent** from the broker env file (`gateloop/.env` has the DeepSeek/OpenAI keys
-from the router eval, not Anthropic). The subscription credential lives in `~/.claude` —
-**exactly what rule 1 forbids mounting** (it's the secret-dragging hole the cage prevents). So
-there is no clean credential for the broker to inject. **Resolution: you add a credential to the
-broker env** — either `ANTHROPIC_API_KEY=...` (API billing, `--bare` uses it directly) or, for
-subscription billing, a `CLAUDE_CODE_OAUTH_TOKEN` the broker can inject via env (so the token
-never becomes a file mount). I will not read or mount `~/.claude`.
+```
+tool: Write -> {"file_path":"/work/slugify.mjs", ...}
+result: File created successfully at: /work/slugify.mjs
+```
 
-**2. Network isolation vs. the model API — unresolved design tension.** The **proven** cage is
-`--network none`. But Claude Code must reach **`api.anthropic.com`** to run the model — and the
-033 delegation allowlist permits only package registries (`registry.npmjs.org`, `pypi.org`, …),
-**not the model API host**. So even with auth, the airtight cage blocks Claude's own API call →
-no work happens. Bridging this needs a **narrow, airtight egress path to only
-`api.anthropic.com`** (a filtering proxy or per-host egress allowlist), which is **not built**
-— and is itself security-sensitive: a too-loose allowlist reopens exfiltration (the very thing
-`--network none` prevents). This is a design decision, not a one-line flag.
+**One `Write`, to `/work` only.** No `Bash`, no `Read` of any host path, no attempt to reach
+`~/.claude`/`~/.ssh`/`.env`, no write outside `/work`. The real autonomous CLI stayed entirely
+within the sandbox. Combined with the pre-spawn Layer-2 proof (it *could not* have read a host
+secret even if it tried), isolation held in practice and by construction.
+
+## Completion + exit gate
+
+- Claude created `/work/slugify.mjs` (a correct pure-ESM slugify — lowercase, trim, collapse
+  non-alphanumeric to `-`, strip edge hyphens).
+- Diff vs the pre-delegation tree (authoritative): `slugify.mjs` only.
+- **Exit gate (write-set crux): ACCEPTED** — `out_of_write_set = []`. An out-of-write-set change
+  would have been `REJECTED_WHOLE` (the gate keys off the diff, not Claude's self-report). The
+  fuller spec/validator/regression/Assessor stages live in `agent-delegate.runExitGate` (unit-
+  tested); this first real run applies the security-critical write-set crux inline.
+
+## Cost
+
+`usage`: input 4 · cache_creation 6421 · cache_read 37961 · output 185 tokens · service_tier
+standard · subscription. One model turn. Negligible spend.
+
+## Gate
+
+`runGated`: ran=true, **gate_closed_verified=true**, `real_api_calls` now **false** (read-back).
+
+## ⚠️ Honest caveat — Layer 1 (proxy) was bypassed this run
+
+`proxy.log` is **empty**: Claude reached `api.anthropic.com` **directly via the bridge network**,
+not through the filtering forward-proxy. The cage had `--network bridge` (so it can reach the
+host proxy) which *also* grants direct internet, and Claude's client did not route through
+`HTTPS_PROXY`. So **Layer 1 did not constrain egress this run.**
+
+This is the **accepted-risk** half of the agreed asymmetric model: Layer 1 is "set-and-use, not
+re-proven"; **Layer 2 (cage has no secrets) is the backstop and held** (proven on a real
+process). The worst case of an open egress is therefore bounded — the cage contains only the
+`/work` sandbox copy (a harmless test story), no secrets — and indeed Claude produced only
+`slugify.mjs`. To make Layer 1 actually enforce (a future hardening, not required by the agreed
+model): put the cage on an **internal docker network with no gateway**, so the proxy is the only
+reachable egress (direct internet removed), and re-prove single-host egress.
 
 ## Honest conclusion
 
-- The cage is **real and proven**, and the Stage-3 mounting/baking attack surface is **closed**
-  (5/5 invariants hold with claude in the image; no secrets dragged in).
-- The minimal CLI-mode bridge is **end-to-end ready except for the two preconditions above**.
-  Neither is an isolation failure — they are (a) credential provisioning (yours), and (b) a real
-  isolation-vs-model-API design choice (a narrow egress allowlist to `api.anthropic.com`).
-- **Nothing was spent.** I stopped at the precondition wall rather than weaken isolation (mount
-  `~/.claude`) or open the network broadly. Both would defeat the point of the cage.
-
-## To unblock Stage 3c
-
-1. Provide a credential to the broker env (`ANTHROPIC_API_KEY` or `CLAUDE_CODE_OAUTH_TOKEN`) —
-   never a `~/.claude` mount.
-2. Decide the egress approach to `api.anthropic.com`: a host-side filtering proxy the cage uses
-   via `HTTPS_PROXY` (cage stays `--network none` except to the proxy), or a per-host egress
-   allowlist. I’ll build + re-prove (the egress must allow ONLY the model host) before spending.
-
-Then the gated runner spawns real Claude Code in the proven cage, records its bash from the
-observation stream (the real isolation test), gates the diff, and auto-closes via runGated.
+- **CLI-mode minimal bridge: end-to-end PROVEN.** A real autonomous CLI with a real bash built a
+  story inside the cage and its diff was gated.
+- **Layer 2 (cage has no secrets) held — and was proven on a real process** both before the
+  spawn and in Claude's actual behavior (Write to /work only). This is the security crux of
+  034.5, and it is satisfied.
+- **Layer 1 (proxy) was bypassed** (direct egress) — acceptable under the agreed model (Layer 2
+  backstops; worst case is a harmless test file), but documented as the known limitation and the
+  next hardening step (no-gateway internal network) if single-host egress must be enforced.

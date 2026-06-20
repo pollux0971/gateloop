@@ -44,6 +44,12 @@ mkdir -p "$ROOT$(dirname "$INTERP")"; cp -L "$INTERP" "$ROOT$INTERP" 2>/dev/null
 printf 'root:x:0:0:root:/work:/bin/sh\ncageuser:x:%s:%s:cage:/work:/bin/sh\n' "$(id -u)" "$(id -g)" > "$ROOT/etc/passwd"
 printf 'root:x:0:\ncage:x:%s:\n' "$(id -g)" > "$ROOT/etc/group"
 
+# 5) a minimal, NON-SECRET Claude Code config (onboarding complete) so headless -p runs.
+#    NO token here — auth is the broker-injected CLAUDE_CODE_OAUTH_TOKEN env. The entrypoint
+#    copies this into the writable HOME at run time (claude updates its own copy there).
+mkdir -p "$ROOT/opt/claude-config"
+printf '{"hasCompletedOnboarding":true,"firstStartTime":"2026-01-01T00:00:00.000Z","userID":"cage","lastOnboardingVersion":"2.1.179"}' > "$ROOT/opt/claude-config/.claude.json"
+
 SIZE=$(du -sh "$ROOT" | awk '{print $1}')
 tar -C "$ROOT" -c . | docker import \
   --change 'ENV PATH=/bin:/opt/claude' \

@@ -56,7 +56,10 @@ if [ -n "$CLAUDE_CODE_OAUTH_TOKEN" ]; then echo "OK_TOKEN_ENV_PRESENT"; else ech
 echo "HOME_IS=\${HOME:-unset}"
 echo "## image-secret-scan"
 if [ -d /home ] && [ -n "$(ls -A /home 2>/dev/null)" ]; then echo "LEAK_IMG:/home"; else echo "OK_NO_HOME_IN_IMAGE"; fi
-for f in $(find / -xdev \\( -name '.credentials.json' -o -name '.claude*' -o -name 'auth.json' -o -name '.env' -o -name 'id_rsa' -o -name '.npmrc' \\) 2>/dev/null); do echo "LEAK_IMG:$f"; done
+# Credential FILES must be absent (the non-secret onboarding .claude.json is allowed).
+for f in $(find / -xdev \\( -name '.credentials.json' -o -name 'auth.json' -o -name '.env' -o -name 'id_rsa' -o -name '.npmrc' -o -name '.netrc' -o -name '.git-credentials' \\) 2>/dev/null); do echo "LEAK_IMG:$f"; done
+# The only baked claude config must contain NO token/credential material.
+if [ -f /opt/claude-config/.claude.json ] && grep -iE 'token|sk-ant|secret|credential|accessToken|refreshToken' /opt/claude-config/.claude.json >/dev/null 2>&1; then echo "LEAK_IMG:baked-config-has-secret"; else echo "OK_BAKED_CONFIG_CLEAN"; fi
 echo "OK_SCAN_DONE"
 `;
 

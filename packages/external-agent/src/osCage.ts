@@ -91,7 +91,8 @@ export function buildDockerCageArgv(opts: DockerCageOptions): string[] {
   // PRIVILEGE — minimal.
   args.push('--cap-drop', 'ALL', '--security-opt', 'no-new-privileges');
   args.push('--user', opts.user ?? '65534:65534'); // nobody:nogroup
-  if (opts.readOnlyRoot !== false) args.push('--read-only', '--tmpfs', '/tmp:rw,nosuid,nodev');
+  // mode=1777 so the mapped non-root user can write its scratch/HOME under /tmp.
+  if (opts.readOnlyRoot !== false) args.push('--read-only', '--tmpfs', '/tmp:rw,nosuid,nodev,mode=1777');
 
   // FILESYSTEM — the ONLY writable mount is the sandbox copy.
   args.push('--volume', `${opts.sandboxRoot}:/work`, '--workdir', '/work');
