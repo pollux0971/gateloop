@@ -29,5 +29,18 @@ export {
   readCodexCredential,
   saveCodexCredential,
   ensureFreshAccess,
+  forceRefreshRoundTrip,
   type FreshAccess,
+  type RefreshRoundTripResult,
 } from './codexCredentialStore';
+
+export {
+  createCodexFetch,
+  type CodexFetchOptions,
+} from './codexFetch';
+
+export {
+  warnSubscriptionToS,
+  resetSubscriptionToSWarning,
+  SUBSCRIPTION_TOS_WARNING,
+} from './tosWarning';

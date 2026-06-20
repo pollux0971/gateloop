@@ -54,3 +54,38 @@ export async function ensureFreshAccess(
   if (!tokens.refresh_token && cred.refresh) next.refresh = cred.refresh;
   return { credential: next, access: next.access, accountId: next.accountId, refreshed: true };
 }
+
+export interface RefreshRoundTripResult {
+  ok: boolean;
+  /** A NON-SECRET summary — token values are never included. */
+  access_changed: boolean;
+  access_len: number;
+  refresh_rotated: boolean;
+  expires_in_min: number;
+  accountId_present: boolean;
+}
+
+/**
+ * Force a real refresh round-trip against the OAuth endpoint and persist the new credential
+ * (mode-0600). Proves headless sustainability — an expired access can be renewed without a human
+ * re-login. Returns ONLY a non-secret summary; the token values are never returned or logged. The
+ * prior refresh token is preserved if the response omits a new one (never lock the operator out).
+ */
+export async function forceRefreshRoundTrip(
+  storePath: string = CODEX_STORE_PATH,
+  now: number = Date.now(),
+  refresh: (refreshToken: string) => Promise<CodexTokenResponse> = refreshToken,
+): Promise<RefreshRoundTripResult> {
+  const before = readCodexCredential(storePath);
+  // Force the refresh path regardless of current expiry by treating the token as already expired.
+  const fresh = await ensureFreshAccess({ ...before, expires: 0 }, now, refresh);
+  saveCodexCredential(fresh.credential, storePath);
+  return {
+    ok: Boolean(fresh.access) && fresh.refreshed,
+    access_changed: fresh.access !== before.access,
+    access_len: fresh.access.length,
+    refresh_rotated: fresh.credential.refresh !== before.refresh,
+    expires_in_min: Math.round((fresh.credential.expires - now) / 60000),
+    accountId_present: Boolean(fresh.accountId),
+  };
+}

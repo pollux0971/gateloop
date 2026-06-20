@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { runFixtureStory, runLiveStory } from '../scripts/provider-mode-codex.ts';
+import { runFixtureStory, runLiveStory, runRefreshRoundTrip } from '../scripts/provider-mode-codex.ts';
 
 /**
  * STORY-035.5 — a real model works a trivial story IN-PROCESS through the tool layer.
@@ -49,4 +49,16 @@ describe.skipIf(!LIVE)('STORY-035.5 LIVE (gated, Codex subscription): real model
     console.log('LIVE changed_files:', r.changed_files, 'accepted:', r.accepted, 'out_of_write_set:', r.out_of_write_set);
     console.log('LIVE usage:', JSON.stringify(r.usage));
   }, 180_000);
+
+  it('refresh round-trip: an expired access auto-refreshes headlessly, refreshed token still calls', async () => {
+    const r = await runRefreshRoundTrip();
+    // the real refresh issued a new access (rotated + persisted; token values never surfaced)
+    expect(r.refresh.ok).toBe(true);
+    expect(r.refresh.access_changed).toBe(true);
+    expect(r.refresh.expires_in_min).toBeGreaterThan(0);
+    // the REFRESHED token still makes a successful gated model call (continuation, no re-login)
+    expect(r.pingRan).toBe(true);
+    expect(r.gateClosedVerified).toBe(true);
+    console.log('REFRESH round-trip:', JSON.stringify({ ...r.refresh, pingRan: r.pingRan }));
+  }, 120_000);
 });

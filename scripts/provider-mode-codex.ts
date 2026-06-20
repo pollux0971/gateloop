@@ -41,11 +41,11 @@ import {
 } from '@gateloop/agent-delegate';
 import { type ToolDefinition, bareToolName, reportTool } from '@gateloop/tool-interface';
 import {
-  readCodexCredential,
-  ensureFreshAccess,
-  saveCodexCredential,
-  CODEX_API_ENDPOINT,
   CODEX_STORE_PATH,
+  createCodexFetch,
+  warnSubscriptionToS,
+  forceRefreshRoundTrip,
+  type RefreshRoundTripResult,
 } from '@gateloop/subscription-auth';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -228,23 +228,6 @@ export async function runFixtureStory(): Promise<StoryRunResult> {
   }
 }
 
-// ── The subscription fetch (Bearer + account-id + refresh + endpoint rewrite) ─────────
-function makeCodexFetch(storePath: string): typeof fetch {
-  let cred = readCodexCredential(storePath);
-  return (async (input: RequestInfo | URL, init?: RequestInit) => {
-    const fresh = await ensureFreshAccess(cred, Date.now());
-    if (fresh.refreshed) { cred = fresh.credential; saveCodexCredential(cred, storePath); }
-    const headers = new Headers(init?.headers as HeadersInit | undefined);
-    headers.delete('authorization');
-    headers.set('authorization', `Bearer ${fresh.access}`);
-    if (fresh.accountId) headers.set('chatgpt-account-id', fresh.accountId);
-    const raw = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
-    const u = new URL(raw);
-    const target = u.pathname.includes('/responses') || u.pathname.includes('/chat/completions') ? CODEX_API_ENDPOINT : raw;
-    return fetch(target, { ...init, headers });
-  }) as typeof fetch;
-}
-
 // ── AI SDK tools — each execute() goes through the mediator (permission + hooks + audit) ──
 function aiSdkTools(mediator: ConfinedToolMediator) {
   const tools: Record<string, ReturnType<typeof tool>> = {};
@@ -280,11 +263,14 @@ export async function runLiveStory(opts: LiveStoryOptions = {}): Promise<StoryRu
   const barrier = await assertToolLayerConfinementBarrier();
   requireConfinementBeforeSpend(barrier); // throws fail-closed if not all-held
 
+  // Enabling the OPTIONAL, ToS-grey subscription plugin prints a one-time warning (ADR-020 §6.1).
+  warnSubscriptionToS();
+
   const sandbox = makeSandbox();
   try {
     const { mediator, audit } = buildConfinedRun(sandbox.root, redact);
     const events: AgentEvent[] = [];
-    const fetchImpl = makeCodexFetch(storePath);
+    const fetchImpl = createCodexFetch({ storePath });
     const openai = createOpenAI({ apiKey: 'gateloop-oauth-dummy', fetch: fetchImpl });
     const model = openai.responses(modelId);
     const tools = aiSdkTools(mediator);
@@ -321,4 +307,50 @@ export async function runLiveStory(opts: LiveStoryOptions = {}): Promise<StoryRu
   } finally {
     sandbox.cleanup();
   }
+}
+
+// ── Refresh round-trip (headless sustainability proof) ────────────────────────────────
+export interface RefreshRoundTripReport {
+  refresh: RefreshRoundTripResult;
+  pingRan: boolean;
+  pingText?: string;
+  gateClosedVerified?: boolean;
+}
+
+/**
+ * Prove headless sustainability: force a REAL refresh against the OAuth endpoint (rotates +
+ * persists the credential mode-0600, token never logged), then make a tiny GATED model ping to
+ * confirm the REFRESHED token still calls successfully — i.e. an expired access renews without a
+ * human re-login. The refresh itself is an auth-endpoint call (not model spend); the ping is the
+ * only billed part and is wrapped in runGated.
+ */
+export async function runRefreshRoundTrip(opts: { modelId?: string; storePath?: string; budgetUsd?: number } = {}): Promise<RefreshRoundTripReport> {
+  const storePath = opts.storePath ?? CODEX_STORE_PATH;
+  const modelId = opts.modelId ?? process.env.CODEX_MODEL ?? 'gpt-5.4';
+  warnSubscriptionToS();
+
+  // 1. Real refresh (auth endpoint; rotates + persists). Token values never returned/logged.
+  const refresh = await forceRefreshRoundTrip(storePath);
+
+  // 2. Tiny gated ping with the REFRESHED credential — proves continuation without a re-login.
+  const budget = new BudgetLedger(opts.budgetUsd ?? 1);
+  const openai = createOpenAI({ apiKey: 'gateloop-oauth-dummy', fetch: createCodexFetch({ storePath }) });
+  const model = openai.responses(modelId);
+  let text = '';
+  const gated = await runGated(async () => {
+    const result = streamText({
+      model,
+      providerOptions: { openai: { instructions: 'Reply with exactly the single word: ok', store: false } },
+      prompt: 'ok',
+      stopWhen: stepCountIs(1),
+    });
+    for await (const part of result.fullStream) {
+      const p = part as { type: string; text?: string };
+      if (p.type === 'text-delta') text += p.text ?? '';
+    }
+    await result.totalUsage;
+    return true;
+  }, { policyPath: POLICY_PATH, budget, env: { CI: process.env.CI } });
+
+  return { refresh, pingRan: gated.ran, pingText: text.slice(0, 40), gateClosedVerified: gated.gateClosedVerified };
 }
