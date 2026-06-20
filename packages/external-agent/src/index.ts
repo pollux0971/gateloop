@@ -35,6 +35,9 @@ export * from './controlledBash';
 // Sandbox isolation invariants — the 034.5 barrier (STORY-034.4).
 export * from './isolation';
 
+// OS-enforced sandbox cage (STORY-034.5).
+export * from './osCage';
+
 // ── Mode selection ───────────────────────────────────────────────────────────────
 
 export type BuilderMode = 'agent_mode' | 'cli_mode';
