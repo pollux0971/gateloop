@@ -12,14 +12,14 @@
  * CI-safe: no container, no network, no real process.
  */
 
-import {
-  buildHeadlessCommand,
-  type AgentEvent,
-  type CliKind,
-  type DelegationTaskPacket,
-  type ExternalAgentDriver,
-  type SandboxHandle,
-} from './headlessDriver';
+import { buildHeadlessCommand } from './headlessDriver';
+import type {
+  AgentEvent,
+  CliKind,
+  DelegationTaskPacket,
+  ExternalAgentDriver,
+  SandboxHandle,
+} from './seam-types';
 import {
   createDelegationSandbox,
   sandboxHandle,

@@ -13,10 +13,12 @@
  */
 import {
   HeadlessDriver,
-  type AgentEvent, type AgentEventKind, type CliKind, type StopReason,
-  type DelegationTaskPacket, type SandboxHandle, type ExternalAgentDriver,
   type ProcessSpawner,
 } from './headlessDriver';
+import type {
+  AgentEvent, AgentEventKind, CliKind, StopReason,
+  DelegationTaskPacket, SandboxHandle, ExternalAgentDriver,
+} from './seam-types';
 
 /** A parsed ACP protocol message (post JSON-RPC decode). The real transport produces
  *  these from the wire; tests inject them directly. */

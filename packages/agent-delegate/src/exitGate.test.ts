@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { runExitGate, assertWriteSetInvariant, type ExitGateContract } from './exitGate';
 import { buildDelegationResult, type DelegationResult } from './delegationResult';
-import type { AgentEvent } from './headlessDriver';
+import type { AgentEvent } from './seam-types';
 import type { BaselineRunner, PriorStoryAcceptance } from '@gateloop/validator-suite';
 
 const done: AgentEvent = { cli: 'claude', kind: 'completion', summary: 'done', stop_reason: 'end_turn', tokens: { input: 5, output: 5 } };

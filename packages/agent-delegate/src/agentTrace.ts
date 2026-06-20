@@ -14,7 +14,7 @@
  */
 
 import { redact } from '@gateloop/event-log';
-import type { AgentEvent } from './headlessDriver';
+import type { AgentEvent } from './seam-types';
 
 /** A trace-event input (the harness owns event-log; this stays dependency-light). */
 export interface AgentTraceInput {

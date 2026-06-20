@@ -19,7 +19,7 @@
  * Design: docs/architecture/17_EXTERNAL_AGENT_DELEGATION.md
  */
 
-import type { AgentEvent, CliKind, StopReason } from './headlessDriver';
+import type { AgentEvent, CliKind, StopReason } from './seam-types';
 
 // ── The result shape ─────────────────────────────────────────────────────────────
 

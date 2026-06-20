@@ -25,7 +25,7 @@ import os from 'node:os';
 import crypto from 'node:crypto';
 import { DEFAULT_PROFILE, type ContainerProfile } from '@gateloop/container-runtime';
 import { isPathInsideRoot } from '@gateloop/workspace-manager';
-import type { SandboxHandle } from './headlessDriver';
+import type { SandboxHandle } from './seam-types';
 
 // ── Network policy: default-deny + registry allowlist ────────────────────────────
 

@@ -10,11 +10,13 @@ import {
   collectEvents,
   isCliKind,
   CLI_KINDS,
-  type ExternalAgentDriver,
-  type DelegationTaskPacket,
-  type SandboxHandle,
-  type AgentEvent,
 } from './headlessDriver';
+import type {
+  ExternalAgentDriver,
+  DelegationTaskPacket,
+  SandboxHandle,
+  AgentEvent,
+} from './seam-types';
 
 // ── Conjectured recorded outputs (⚠ calibrate against real streams in STORY-033.9) ──
 // These are best-known shapes from public docs/observation; the SPIKE verified flags

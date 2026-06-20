@@ -11,13 +11,13 @@ import {
   type DelegationLimits,
 } from './entryGate';
 import { destroyDelegationSandbox } from './delegationSandbox';
-import {
-  type AgentEvent,
-  type CliKind,
-  type DelegationTaskPacket,
-  type ExternalAgentDriver,
-  type SandboxHandle,
-} from './headlessDriver';
+import type {
+  AgentEvent,
+  CliKind,
+  DelegationTaskPacket,
+  ExternalAgentDriver,
+  SandboxHandle,
+} from './seam-types';
 
 const cleanups: Array<() => void> = [];
 afterEach(() => { while (cleanups.length) cleanups.pop()!(); });

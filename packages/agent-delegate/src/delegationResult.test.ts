@@ -11,7 +11,7 @@ import {
   cliUsesNativeSchema,
   type DelegationResult,
 } from './delegationResult';
-import type { AgentEvent } from './headlessDriver';
+import type { AgentEvent } from './seam-types';
 
 const SCHEMA_PATH = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),

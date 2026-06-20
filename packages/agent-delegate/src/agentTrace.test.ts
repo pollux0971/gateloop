@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { mapAgentEventToTrace, agentEventToTicker, agentEventsToTicker } from './agentTrace';
-import type { AgentEvent } from './headlessDriver';
+import type { AgentEvent } from './seam-types';
 
 const ev = (over: Partial<AgentEvent>): AgentEvent => ({ cli: 'claude', kind: 'message', summary: 's', ...over });
 

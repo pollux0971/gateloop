@@ -10,6 +10,7 @@
  * Design: docs/architecture/17_EXTERNAL_AGENT_DELEGATION.md
  */
 
+export * from './seam-types';
 export * from './headlessDriver';
 export * from './acpDriver';
 export * from './delegationSandbox';
