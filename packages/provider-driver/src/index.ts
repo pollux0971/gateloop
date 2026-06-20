@@ -52,12 +52,14 @@ export {
   type ProviderToolMediator,
   type ToolCall,
   type ToolMediation,
+  type ToolMediationStage,
   type StopVerdict,
 } from './providerDriver';
 
 export {
   ConfinedToolMediator,
   surfacePermission,
+  isWhitelistedTool,
   makeValidatingPreHook,
   makeRedactPostHook,
   requireReportStopHook,
@@ -73,6 +75,7 @@ export {
   type StopHook,
   type StopHookInput,
   type ConfinedMediatorOptions,
+  type ToolAuditRecord,
 } from './confinement';
 
 export {

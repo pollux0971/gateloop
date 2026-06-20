@@ -13,6 +13,7 @@ describe('STORY-035.4: tool-layer confinement barrier — set ≠ effective, PRO
     const byName = Object.fromEntries(barrier.invariants.map((i) => [i.name, i]));
 
     expect(barrier.invariants.map((i) => i.name).sort()).toEqual([
+      'default_deny_unexpected_tool_blocked_and_recorded',
       'deny_bash_truly_blocks_not_just_absent',
       'post_tool_use_redaction_removes_fake_secret_from_trace',
       'pre_tool_use_deny_actually_stops_call',
@@ -32,6 +33,10 @@ describe('STORY-035.4: tool-layer confinement barrier — set ≠ effective, PRO
 
     // 4. write-set crux truly bites (REJECT_WHOLE)
     expect(byName['write_set_crux_truly_bites_reject_whole'].held).toBe(true);
+
+    // 5. default-deny: unexpected/unknown tools blocked AND recorded (covers the unforeseen)
+    expect(byName['default_deny_unexpected_tool_blocked_and_recorded'].held, byName['default_deny_unexpected_tool_blocked_and_recorded'].detail).toBe(true);
+    expect(byName['default_deny_unexpected_tool_blocked_and_recorded'].detail).toContain('executor_never_ran=true');
 
     expect(barrier.held).toBe(true);
   });

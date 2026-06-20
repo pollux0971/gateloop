@@ -128,5 +128,37 @@ export async function assertToolLayerConfinementBarrier(): Promise<ConfinementBa
     });
   }
 
+  // ── 5. DEFAULT-DENY: an UNEXPECTED/unknown tool is blocked AND recorded (executor not reached) ──
+  // This is the strengthening that makes 035.5 safe: a real model may reach for a tool we never
+  // anticipated; because the allow path is the ONLY way through, the unexpected call is refused by
+  // construction (not by an enumerated denylist) and shows up in the observation log.
+  {
+    const executorCalls: string[] = [];
+    const audited: { name: string; defaultDenied: boolean }[] = [];
+    const mediator = new ConfinedToolMediator({
+      executor: (c) => { executorCalls.push(c.toolName); return { ok: true }; },
+      onAudit: (r) => audited.push({ name: r.toolName, defaultDenied: r.defaultDenied }),
+    });
+    // A grab-bag of UNEXPECTED calls: unknown namespace, unknown tool, malformed name, prototype trick.
+    const probes = [
+      { toolCallId: 'u1', toolName: 'mcp__evil__exfiltrate', input: { to: 'http://attacker' } },
+      { toolCallId: 'u2', toolName: 'mcp__gateloop__deploy_to_prod', input: {} },
+      { toolCallId: 'u3', toolName: '__proto__', input: {} },
+      { toolCallId: 'u4', toolName: '', input: {} },
+      { toolCallId: 'u5', toolName: 'curl_http', input: { url: 'http://x' } },
+    ];
+    const verdicts = [];
+    for (const p of probes) verdicts.push(await mediator.mediate(p));
+    const allDenied = verdicts.every((v) => !v.allowed);
+    const allDefaultDenied = verdicts.every((v) => !v.allowed && v.defaultDenied === true);
+    const executorNeverRan = executorCalls.length === 0;
+    const allRecorded = mediator.defaultDenials().length === probes.length && audited.length === probes.length;
+    invariants.push({
+      name: 'default_deny_unexpected_tool_blocked_and_recorded',
+      held: allDenied && allDefaultDenied && executorNeverRan && allRecorded,
+      detail: `all_denied=${allDenied} all_default_denied=${allDefaultDenied} executor_never_ran=${executorNeverRan} all_recorded=${allRecorded} (${probes.length} probes)`,
+    });
+  }
+
   return { held: invariants.every((i) => i.held), invariants };
 }

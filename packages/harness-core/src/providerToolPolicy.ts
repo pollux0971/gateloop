@@ -37,6 +37,15 @@ export interface ProviderCanUseToolOptions {
 /** Tools that mutate the workspace (write path → write-set enforced; the diff is the final crux). */
 const WRITE_TOOLS = new Set(['apply_patch', 'write_file', 'write', 'edit']);
 
+/**
+ * Credential/secret paths the provider path refuses to touch (read OR write), independent of the
+ * permission-gateway's own detector. Notably includes `~/.claude/.credentials.json` (the Claude
+ * OAuth token store) which the gateway's older SECRET_PATH regex predates — a real gap this
+ * provider-layer guard closes (defense-in-depth; covers .env/.ssh/.codex/.claude/.aws/.gcloud).
+ */
+const PROVIDER_SECRET_PATH =
+  /(^|\/)\.env($|\.|\/)|(^|\/)\.ssh(\/|$)|id_rsa|\.pem$|\.key$|(^|\/)\.codex(\/|$)|(^|\/)\.claude(\/|$)|\.credentials\.json$|auth\.json$|(^|\/)\.aws(\/|$)|\.config\/gcloud|\.netrc|\.git-credentials/i;
+
 export type ProviderCanUseTool = (toolName: string, input: unknown) => ProviderPermissionVerdict;
 
 export function buildProviderCanUseTool(opts: ProviderCanUseToolOptions): ProviderCanUseTool {
@@ -53,6 +62,11 @@ export function buildProviderCanUseTool(opts: ProviderCanUseToolOptions): Provid
       : typeof obj.path === 'string'
         ? [obj.path]
         : extra.targetPaths ?? [];
+    // Credential-path guard (read OR write) — closes the ~/.claude gap the gateway regex misses.
+    const secretHit = targetPaths.find((p) => typeof p === 'string' && PROVIDER_SECRET_PATH.test(opts.oracle.resolveRealPath(p)));
+    if (secretHit) {
+      return { decision: 'deny', reason: `provider policy: secret/credential path refused: ${secretHit}` };
+    }
     const isWrite = WRITE_TOOLS.has(bare) || Boolean(extra.isWrite);
     const req: ToolRequest = {
       mode,

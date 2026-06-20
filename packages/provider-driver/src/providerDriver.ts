@@ -25,9 +25,20 @@ export interface ToolCall {
   input: unknown;
 }
 
+export type ToolMediationStage = 'pre_hook' | 'permission' | 'executed';
+
 export type ToolMediation =
   | { allowed: true; output: unknown }
-  | { allowed: false; reason: string };
+  | {
+      allowed: false;
+      reason: string;
+      /** True when the call was refused because it is not in the authorized whitelist
+       *  (unknown / unexpected / malformed / shell-like) — the default-deny path, as opposed
+       *  to a targeted policy deny (write-set / secret-path / schema) on a whitelisted tool. */
+      defaultDenied?: boolean;
+      /** Which confinement stage produced the deny (for the observation stream). */
+      stage?: ToolMediationStage;
+    };
 
 /** Verdict of the Stop hook (035.3: require a report before the agent may stop). */
 export interface StopVerdict {
@@ -102,12 +113,23 @@ export class ProviderDriver implements ProviderRunner {
             output: verdict.output,
           }, redact)!;
         } else {
+          // Default-denied (not-whitelisted) calls are specially marked so a 035.5 reviewer can
+          // see exactly which UNEXPECTED tool a real model reached for and that it was blocked.
+          const marker = verdict.defaultDenied ? 'tool_default_denied' : 'tool_denied';
+          const line = `${marker}:${part.toolName} [${verdict.stage ?? 'permission'}] ${verdict.reason}`;
           yield {
             cli,
             kind: 'tool_result',
             tool: part.toolName,
-            summary: redact ? redact(`tool_denied:${part.toolName} ${verdict.reason}`) : `tool_denied:${part.toolName} ${verdict.reason}`,
-            raw: { backendId: this.backendId, denied: true, reason: verdict.reason, toolName: part.toolName },
+            summary: redact ? redact(line) : line,
+            raw: {
+              backendId: this.backendId,
+              denied: true,
+              default_denied: Boolean(verdict.defaultDenied),
+              stage: verdict.stage ?? 'permission',
+              reason: verdict.reason,
+              toolName: part.toolName,
+            },
           };
         }
         continue;
