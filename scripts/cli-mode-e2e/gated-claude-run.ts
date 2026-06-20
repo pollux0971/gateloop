@@ -12,7 +12,7 @@
  * broker→process.env→docker -e passthrough (never in argv/logs); every printed line is
  * token-redacted. real_api_calls is opened/closed/verified by runGated.
  */
-import { execFileSync, spawn } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -24,8 +24,16 @@ import { proveLayer2 } from './prove-layer2.ts';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const IMAGE = 'cage-claude:latest';
+const PROXY_IMG = 'cage-proxy:latest';
 const PROXY_PORT = 8889;
-const PROXY_URL = `http://host.docker.internal:${PROXY_PORT}`;
+// HARDENED Layer 1 (034.5 hardening, proven by prove-egress.ts): a no-gateway --internal
+// network so the cage has NO direct route out; the proxy container (on internal + bridge) is
+// the ONLY egress. The cage reaches it by container name. (Replaces the bypassable host-proxy
+// + bridge of the first 034.5 run.)
+const RUN_TAG = process.env.RUN_TS || 'run';
+const NET = `cage-egress-${RUN_TAG}`;
+const PROXY_C = `cage-proxy-${RUN_TAG}`;
+const PROXY_URL = `http://${PROXY_C}:${PROXY_PORT}`;
 const policyPath = path.resolve(here, '../../configs/policy.yaml');
 const OUT = `/data/python/codeharness_eval_output/cli_mode_claude_${process.env.RUN_TS || 'run'}`;
 fs.mkdirSync(OUT, { recursive: true });
@@ -65,15 +73,15 @@ process.env.CLAUDE_CODE_OAUTH_TOKEN = TOKEN; // for docker -e passthrough (not i
 const redact = (s: string) => (TOKEN ? s.split(TOKEN).join('[REDACTED-TOKEN]') : s);
 console.log(`[broker] OAuth token resolved (${TOKEN.length} chars) and set for cage env passthrough — never logged.`);
 
-// ── 4. filtering proxy (Layer 1, set-and-use) ──────────────────────────────────────
-const proxy = spawn(process.execPath, [path.join(here, 'anthropic-proxy.mjs'), String(PROXY_PORT)], { stdio: ['ignore', 'pipe', 'pipe'] });
-const proxyLog: string[] = [];
-proxy.stderr.on('data', (d) => proxyLog.push(String(d)));
-await new Promise<void>((resolve, reject) => {
-  const t = setTimeout(() => reject(new Error('proxy did not start')), 5000);
-  proxy.stdout.on('data', (d) => { if (String(d).includes('PROXY_LISTENING')) { clearTimeout(t); resolve(); } });
-});
-console.log(`[proxy] filtering forward-proxy up on ${PROXY_PORT} (allowlist api.anthropic.com).`);
+// ── 4. HARDENED Layer-1 egress: no-gateway internal net + proxy container (the only egress) ──
+const dsh = (a: string[], allowFail = false) => { try { return execFileSync('docker', a, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }); } catch (e) { if (allowFail) return ''; throw e; } };
+const teardownEgress = () => { dsh(['rm', '-f', PROXY_C], true); dsh(['network', 'rm', NET], true); };
+execFileSync('bash', [path.join(here, 'build-proxy-image.sh'), PROXY_IMG], { stdio: 'inherit' });
+teardownEgress();
+dsh(['network', 'create', '--internal', NET]);            // no gateway → cage has NO direct route out
+dsh(['run', '-d', '--name', PROXY_C, '--network', NET, PROXY_IMG, String(PROXY_PORT)]);
+dsh(['network', 'connect', 'bridge', PROXY_C]);           // proxy gets an external route to Anthropic
+console.log(`[proxy] hardened egress: cage on --internal '${NET}'; proxy container '${PROXY_C}' is the ONLY egress (allowlist api.anthropic.com).`);
 
 // ── 5. sandbox /work — pre-delegation git tree ─────────────────────────────────────
 const reg = new WorkspaceRegistry();
@@ -93,9 +101,9 @@ const PROMPT = [
 ].join('\n');
 
 if (process.env.DRY_RUN) {
-  proxy.kill('SIGTERM');
+  teardownEgress();
   cleanupWorkspace(reg, ws);
-  console.log('\n[DRY_RUN] imports loaded · Layer-2 gate held · token resolved · proxy up · sandbox ready. NOT spawning Claude. (zero cost)');
+  console.log('\n[DRY_RUN] imports loaded · Layer-2 gate held · token resolved · hardened egress up · sandbox ready. NOT spawning Claude. (zero cost)');
   process.exit(0);
 }
 
@@ -117,6 +125,7 @@ const gated = await runGated(async () => {
     ],
     passthroughEnv: ['CLAUDE_CODE_OAUTH_TOKEN'],
     authEnv: { HOME: '/tmp' }, // claude state to ephemeral /tmp, NOT /work (keeps the diff clean)
+    dockerNetwork: NET,        // HARDENED: cage on the no-gateway internal net — proxy is the only egress
     proxyUrl: PROXY_URL,
     disableTelemetry: true,
     user: `${uid}:${gid}`,
@@ -125,10 +134,12 @@ const gated = await runGated(async () => {
   return cage;
 }, { policyPath, budget, env: { CI: process.env.CI } });
 
-// ── 7. stop proxy ──────────────────────────────────────────────────────────────────
-proxy.kill('SIGTERM');
+// ── 7. capture proxy log (proves egress went THROUGH the proxy — contrast 034.5 empty log) ──
+// proxy logs to stderr (Go log pkg) → merge 2>&1 to capture it.
+const proxyLogText = execFileSync('sh', ['-c', `docker logs ${PROXY_C} 2>&1`], { encoding: 'utf8' }).toString();
+fs.writeFileSync(path.join(OUT, 'proxy.log'), proxyLogText);
+teardownEgress();
 console.log(`[gated] ran=${gated.ran} gate_closed_verified=${gated.gateClosedVerified} reason="${gated.reason}"`);
-fs.writeFileSync(path.join(OUT, 'proxy.log'), proxyLog.join(''));
 
 if (!gated.ran || !cage) { console.log('[gated] run did not execute (gate refused).'); process.exit(0); }
 

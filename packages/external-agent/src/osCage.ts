@@ -53,6 +53,12 @@ export interface DockerCageOptions {
    *  forward-proxy. Switches the network to bridge (the cage must reach the host proxy),
    *  adds host.docker.internal:host-gateway, and sets HTTPS_PROXY/HTTP_PROXY. */
   proxyUrl?: string;
+  /** HARDENED Layer-1 (034.5 hardening): run the cage on this named docker network instead
+   *  of bridge/none. Use a `--internal` (no-gateway) network so the cage has NO direct route
+   *  out — the proxy container (on this net + an external net) is the ONLY egress. Proven by
+   *  prove-egress.ts. Takes precedence over `network`; combine with proxyUrl=http://<proxy>:port
+   *  (the proxy container's name on the network) — no host-gateway is added. */
+  dockerNetwork?: string;
   /** Turn off Claude Code's non-essential traffic so only api.anthropic.com is contacted. */
   disableTelemetry?: boolean;
   /** Default false → `--network none` (OS-enforced default-deny). Ignored when proxyUrl set. */
@@ -76,13 +82,19 @@ export interface DockerCageOptions {
 export function buildDockerCageArgv(opts: DockerCageOptions): string[] {
   const args: string[] = ['run', '--rm', '--init'];
 
-  // NETWORK — default-deny (`--network none`). With a proxy, the cage gets bridge networking
-  // but reaches the internet ONLY through the host-side forward-proxy (Layer 1).
-  const networked = opts.proxyUrl ? 'bridge' : opts.network ? 'bridge' : 'none';
-  args.push('--network', networked);
-  if (opts.proxyUrl) {
-    args.push('--add-host', 'host.docker.internal:host-gateway');
-    args.push('--env', `HTTPS_PROXY=${opts.proxyUrl}`, '--env', `HTTP_PROXY=${opts.proxyUrl}`);
+  // NETWORK. Precedence: an explicit (no-gateway internal) dockerNetwork — the HARDENED
+  // Layer 1, where the proxy container is the only egress; else a host-proxy on bridge; else
+  // default-deny (`--network none`).
+  if (opts.dockerNetwork) {
+    args.push('--network', opts.dockerNetwork); // e.g. a `--internal` net: no direct route out
+    if (opts.proxyUrl) args.push('--env', `HTTPS_PROXY=${opts.proxyUrl}`, '--env', `HTTP_PROXY=${opts.proxyUrl}`);
+  } else {
+    const networked = opts.proxyUrl ? 'bridge' : opts.network ? 'bridge' : 'none';
+    args.push('--network', networked);
+    if (opts.proxyUrl) {
+      args.push('--add-host', 'host.docker.internal:host-gateway');
+      args.push('--env', `HTTPS_PROXY=${opts.proxyUrl}`, '--env', `HTTP_PROXY=${opts.proxyUrl}`);
+    }
   }
   if (opts.disableTelemetry) {
     args.push('--env', 'CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1', '--env', 'DISABLE_TELEMETRY=1', '--env', 'DISABLE_AUTOUPDATER=1');

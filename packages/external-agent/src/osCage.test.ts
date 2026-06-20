@@ -76,4 +76,11 @@ describe('OS cage argv builder (034.5) — structural invariants', () => {
     // ...and NEVER as KEY=VALUE (no token value in the argv)
     expect(a.join(' ')).not.toMatch(/CLAUDE_CODE_OAUTH_TOKEN=/);
   });
+
+  it('dockerNetwork (hardened Layer 1) runs the cage on a no-gateway internal net via the proxy container', () => {
+    const a = buildDockerCageArgv({ ...BASE, dockerNetwork: 'cage-internal', proxyUrl: 'http://cage-proxy:8889' });
+    expect(a[a.indexOf('--network') + 1]).toBe('cage-internal'); // the --internal net, not bridge
+    expect(a.join(' ')).not.toContain('host-gateway');           // no host route — proxy container is egress
+    expect(a.join(' ')).toContain('HTTPS_PROXY=http://cage-proxy:8889');
+  });
 });

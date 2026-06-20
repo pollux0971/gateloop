@@ -94,3 +94,20 @@ reachable egress (direct internet removed), and re-prove single-host egress.
 - **Layer 1 (proxy) was bypassed** (direct egress) — acceptable under the agreed model (Layer 2
   backstops; worst case is a harmless test file), but documented as the known limitation and the
   next hardening step (no-gateway internal network) if single-host egress must be enforced.
+
+---
+
+## Update (2026-06-20) — Layer 1 HARDENED + PROVEN
+
+The Layer-1 caveat above is resolved. The cage now runs on a no-gateway
+`docker network create --internal` network (no direct route out); a static Go CONNECT
+proxy container (allowlist = `api.anthropic.com`, built offline) straddles the internal
+net + bridge as the **only** egress. Proven by `prove-egress.ts` with a real busybox
+probe — **4/4**: anthropic reachable via proxy, every other host denied (403), direct
+bypass blocked (`--internal` no route), and the **proxy log is NOT empty** (it shows the
+anthropic CONNECT — the exact contrast to this run's empty log). Wired into the live path
+(`osCage.dockerNetwork` + `gated-claude-run`). Lesson recorded in the root `CLAUDE.md`
+(容器 egress 隔離規則：設了≠生效，必驗). Open item for the next real run: confirm Claude
+honors `HTTPS_PROXY` on the `--internal` net (this run showed it went direct; if it
+ignores the proxy env it would be blocked with no route → a transparent/iptables redirect
+would be needed). Both layers are now real, enforced boundaries.
