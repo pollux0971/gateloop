@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readModels, readRouting, routingRows, applyRoutingUpdate, readRouterConfig, applyRouterConfig } from './registry';
+import { loadCliModeTrace } from './cliModeTrace';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(__dirname, '../../..');            // gateloop/
@@ -114,6 +115,14 @@ app.get('/api/router-config', async () => readRouterConfig(REPO));
 app.put('/api/router-config', async (req: any, reply) => {
   const r = applyRouterConfig(REPO, (req.body ?? {}) as { enabled?: boolean; mode?: any });
   return r.ok ? r.config : reply.code(400).send({ error: r.error });
+});
+
+// ── CLI-mode monitor (STORY-034.6): READ-ONLY projection of a real CLI-mode run trace ──
+// Serves the recorded STORY-034.5 run (real Claude-in-the-cage trace + real isolation
+// proofs). Pure projection — no control here can start a run or relax isolation.
+app.get('/api/cli-mode-run/:runId/trace', async (req: any, reply) => {
+  const t = loadCliModeTrace(String(req.params.runId));
+  return t ? t : reply.code(404).send({ error: 'cli-mode run not found' });
 });
 
 app.listen({ port: 8787, host: '127.0.0.1' }).catch(err => { app.log.error(err); process.exit(1); });
