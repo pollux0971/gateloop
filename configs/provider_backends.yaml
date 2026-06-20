@@ -1,0 +1,29 @@
+# Provider backends (EPIC-035, per ADR-020) — in-process multi-backend provider layer.
+#
+# Two sharply-separated tiers. The router (model_routing.yaml / model-gateway) picks the
+# backend + model; the ProviderDriver resolves that backend's credential via the Secret Broker
+# and drives it in-process via the (isolated) Vercel AI SDK. The core never imports the AI SDK.
+
+# CORE — metered API keys. Product default, officially supported, distributable, no ToS risk.
+metered:
+  default_backend: openai
+  backends:
+    openai:
+      backend_id: openai
+      key_provider: openai          # Secret Broker → OPENAI_API_KEY (never plaintext to agent)
+      default_model: gpt-5.4
+    anthropic:
+      backend_id: anthropic
+      key_provider: anthropic        # Secret Broker → ANTHROPIC_API_KEY
+      default_model: claude-sonnet-4-6
+
+# OPTIONAL — subscription (Codex/ChatGPT). Detachable plugin built in STORY-035.6, NOT a default.
+# ToS-grey (reuses OpenAI's client_id; may be blocked); bring-your-own-credential; one-time host
+# login; the metered core does NOT depend on this block. Disabled until 035.6.
+subscription:
+  enabled: false
+  tos_warning: >-
+    Subscription backends reuse a provider OAuth client_id and an undocumented endpoint; this is
+    an unofficial, ToS-grey-area integration the operator enables at their own risk. The endorsed
+    default is a metered API key. See ADR-020 and STORY-035.6.
+  backends: {}

@@ -56,6 +56,9 @@
       "path": "packages/preflight-runner"
     },
     {
+      "path": "packages/provider-driver"
+    },
+    {
       "path": "packages/settings"
     },
     {

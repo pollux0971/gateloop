@@ -87,6 +87,16 @@ export function staticSource(map: Record<string, string>): SecretSource {
   return { read: (provider) => map[provider] ?? '' };
 }
 
+/**
+ * Build the opaque handle for a provider's METERED API key (EPIC-035 / STORY-035.2). The
+ * provider-driver passes this handle to the broker AT THE CALL BOUNDARY; the plaintext key is
+ * produced only inside `broker.resolve()` and never reaches the driver/core. `provider` is the
+ * broker provider id (e.g. 'openai' → `OPENAI_API_KEY`).
+ */
+export function meteredKeyHandle(provider: string): SecretHandle {
+  return { handle_id: `metered:${provider}`, handle_type: 'metered_api_key', provider };
+}
+
 export interface ClaudeOAuthResolution {
   token: string;
   expiresAt?: number;

@@ -114,6 +114,36 @@ export function cliModeProducer(
   };
 }
 
+/**
+ * provider_mode producer (EPIC-035 / STORY-035.2) — routes to an in-process ProviderDriver
+ * (Vercel-AI-SDK-backed, isolated behind its own package) instead of a spawned CLI. Structurally
+ * identical to cliModeProducer: it consumes the driver's AgentEvent stream and derives the
+ * AUTHORITATIVE diff via the injected getDiff (git diff from the sandbox). Accepts any object with
+ * a `run()` of the driver shape, so external-agent need not depend on @gateloop/provider-driver
+ * (no cycle). Rides the existing cli_mode lane through the shared exit gate until 035.7 renames it
+ * to provider_mode. No real provider is contacted here — the engine inside the driver decides that
+ * (scripted in tests; gated real run is 035.5).
+ */
+export interface ProviderRunnerLike {
+  run(packet: DelegationTaskPacket, sandbox: SandboxHandle): AsyncIterable<AgentEvent>;
+}
+
+export function providerModeProducer(
+  runner: ProviderRunnerLike,
+  getDiff: (events: AgentEvent[]) => string | Promise<string>,
+  cli: CliKind = 'codex',
+): DiffProducer {
+  return {
+    mode: 'cli_mode',
+    async produce(packet, sandbox) {
+      const events: AgentEvent[] = [];
+      for await (const ev of runner.run(packet, sandbox)) events.push(ev);
+      const diff = await getDiff(events);
+      return { diff, events, cli };
+    },
+  };
+}
+
 // ── Shared result contract + exit gate (reused from 033 — NOT rebuilt) ─────────────
 
 /**
