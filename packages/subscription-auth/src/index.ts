@@ -23,3 +23,11 @@ export {
   type CodexOAuthCredential,
   type AuthorizeUrlOptions,
 } from './codexOAuth';
+
+export {
+  CODEX_STORE_PATH,
+  readCodexCredential,
+  saveCodexCredential,
+  ensureFreshAccess,
+  type FreshAccess,
+} from './codexCredentialStore';

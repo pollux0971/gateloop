@@ -16,29 +16,29 @@
     "@gateloop/agent-output": "workspace:*",
     "@gateloop/assessor-runtime": "workspace:*",
     "@gateloop/codegraph-adapter": "workspace:*",
-    "@gateloop/container-runtime": "workspace:*",
-    "@gateloop/developer-runtime": "workspace:*",
-    "@gateloop/supervisor-runtime": "workspace:*",
     "@gateloop/codex-auth": "workspace:*",
-    "@gateloop/story-manager": "workspace:*",
+    "@gateloop/container-runtime": "workspace:*",
     "@gateloop/context-manager": "workspace:*",
-    "@gateloop/planning-steward": "workspace:*",
-    "@gateloop/task-graph": "workspace:*",
     "@gateloop/debugger-runtime": "workspace:*",
+    "@gateloop/developer-runtime": "workspace:*",
     "@gateloop/event-log": "workspace:*",
     "@gateloop/failure-bank": "workspace:*",
     "@gateloop/gate-control": "workspace:*",
     "@gateloop/harness-core": "workspace:*",
     "@gateloop/model-gateway": "workspace:*",
-    "@gateloop/secret-broker": "workspace:*",
-    "@gateloop/tool-interface": "workspace:*",
     "@gateloop/permission-gateway": "workspace:*",
+    "@gateloop/planning-steward": "workspace:*",
     "@gateloop/preflight-runner": "workspace:*",
     "@gateloop/reviewer-runtime": "workspace:*",
+    "@gateloop/secret-broker": "workspace:*",
     "@gateloop/settings": "workspace:*",
     "@gateloop/shared": "workspace:*",
     "@gateloop/skill-runtime": "workspace:*",
+    "@gateloop/story-manager": "workspace:*",
+    "@gateloop/supervisor-runtime": "workspace:*",
+    "@gateloop/task-graph": "workspace:*",
     "@gateloop/tool-executor": "workspace:*",
+    "@gateloop/tool-interface": "workspace:*",
     "@gateloop/validator-suite": "workspace:*",
     "@gateloop/workspace-manager": "workspace:*",
     "@types/node": "^22.10.2",
@@ -48,5 +48,9 @@
   "workspaces": [
     "packages/*",
     "apps/*"
-  ]
+  ],
+  "dependencies": {
+    "@ai-sdk/openai": "^3.0.73",
+    "ai": "^6.0.208"
+  }
 }
