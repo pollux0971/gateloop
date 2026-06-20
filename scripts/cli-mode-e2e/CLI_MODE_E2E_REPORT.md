@@ -1,95 +1,84 @@
-# CLI-Mode E2E (STORY-034.5) — HALTED at pre-flight: isolation is modeled, not enforced
+# CLI-Mode E2E (STORY-034.5) — Stage 3 report
 
-**Date:** 2026-06-20 · **Status:** STOPPED before any spend or spawn. **No money spent,
-no process launched, `real_api_calls = false` (untouched).** This is the highest-priority
-isolation finding (鐵則 5) — surfaced exactly when the irreversible ordering intends.
+**Date:** 2026-06-20 · `real_api_calls = false` (untouched) · **no Claude spawned, no spend.**
 
-## TL;DR
+Stages 1–2 (commit `bf86c18`) built a real, OS-enforced cage and proved isolation on a real
+busybox process. Stage 3 builds a **node/claude-capable cage**, re-proves isolation as an
+automatic program gate, and would auto-spawn real Claude Code if the gate passes. The gate
+**passes** — but two real preconditions (neither an isolation crack) block the spawn.
 
-034.5 wants to run **real Claude Code with a real bash** inside the "hardened sandbox" from
-033.3 / 034.4. But that sandbox is a **temp-directory model, not an OS-level cage**. A real
-autonomous CLI process **bypasses every confinement the harness built**, because the harness
-only governs writes that flow through its own TypeScript. Launching real Claude Code now
-would run an all-permissions-bypassed agent **as user `pollux`** with read access to real
-secrets, write access to the real repo/home, and unrestricted network. That is precisely the
-catastrophe the "prove isolation before spend" ordering exists to prevent — so the run was
-halted.
+## Stage 3a — claude cage image (built, offline)
 
-## What 034.4 actually proved (and what it did not)
+Investigation flipped the plan in a good way:
+- **node is a snap** (`/snap/bin/node` → snapd-confined) — not cleanly mountable into a
+  `--network none` container. But…
+- **claude 2.1.179 is a self-contained 240 MB ELF** (`~/.local/share/claude/versions/2.1.179`)
+  that needs only **glibc** — **no node required**. It runs standalone (`HOME=/tmp/nohome
+  claude --version` → `2.1.179`).
 
-034.4's `assertSandboxIsolationBarrier` (4/4 held, `dabc955`) proved that **the harness's own
-checked-write helpers refuse escapes**: `sandboxCanReach` returns false for outside paths,
-`writeSandboxFile`/`readSandboxFile` throw on containment violations, the network policy is
-default-deny *as data*, and `buildSandboxEnv` scrubs the env.
+So `build-claude-cage-image.sh` builds a **fully self-contained** image OFFLINE (no pull):
+busybox + the claude ELF + its glibc deps (via `ldd`) — and **nothing from `$HOME`** beyond the
+claude program binary. The running cage has **zero host bind mounts** except the sandbox copy
+at `/work`, so secrets cannot be dragged in by construction. `claude --version` runs inside the
+cage (`--network none`, read-only root, only `/work` writable). Image: `cage-claude:latest`
+(246 MB).
 
-That is a proof about **our code's behavior**. It is **not** a proof that a **real external
-process** is caged — and architecturally it cannot be, because a real `claude` process never
-calls `writeSandboxFile`. It has its own real bash and writes via OS syscalls.
+## Stage 3b — automatic isolation gate (PASSES 5/5)
 
-## Evidence (verified pre-flight, zero cost)
+`prove-cage.ts cage-claude:latest` runs a real busybox probe **inside the claude cage** and
+re-proves every invariant — the program gate before any spawn:
 
-| Check | Result |
+| Invariant | Result |
 |---|---|
-| `claude` installed / headless-capable | ✅ `2.1.179` at `/home/pollux/.local/bin/claude` |
-| `real_api_calls` gate | ✅ `false` |
-| 034.4 barrier invariants | ✅ 4/4 held — **but over harness helpers, not a real process** |
-| `createDelegationSandbox` | ⚠️ `fs.mkdtempSync` + `fs.cpSync` — a plain temp dir. No container, namespace, mount, or net restriction. `profile`/`network`/`read_only_repo_copy` are **metadata**, enforced by nothing. |
-| `container-runtime` | ⚠️ `dryRun()` / schema-only — *"Actual container execution … never actually run here. v0."* Builds a `docker …` string, never executes it. |
-| 034.3 `runControlledBash` | ⚠️ Confines writes **only** by checking `isPathInsideRoot` before the harness's own `fs.writeFileSync`. Governs scripted writes routed through our code — **not** a real process. |
-| Real cli-mode gated spawn entry | ❌ **Does not exist** (the prompt's `<runGated + cli_mode + claude-code>` is a placeholder for infra never built). |
-| `buildHeadlessCommand` (claude) | ⚠️ Uses `--permission-mode bypassPermissions`, justified in-code by *"the container is the real boundary"* — **but there is no container.** |
+| real process cannot read host secret (fake `.env` + real `~/.ssh`/`~/.codex`/`gateloop/.env`) | ✅ HELD |
+| writes confined, host tree untouched (`/`,`/etc`,`/bin` refused; `/work` lands on host sandbox) | ✅ HELD |
+| network denied (`nc`+`wget` egress fail under `--network none`) | ✅ HELD |
+| broker auth in cage env only; key absent from sandbox disk; host `HOME` not inherited (`HOME=/work`) | ✅ HELD |
+| **no `$HOME`/secret/config baked into the image** (`find` for `.claude*`/`auth.json`/`.env`/`.ssh`/`.npmrc`/`credentials` → none; `/home` empty) | ✅ HELD |
 
-## Why running now is unsafe
+Gate exit 0 → the auto-gate would permit the spawn. **Baking claude in did NOT drag in any
+secrets** — the Stage-3 attack surface is closed. (Zero cost: busybox probe, fake secret, no
+Claude, no real network egress.)
 
-`nodeProcessSpawner` would `spawn('claude', ['--print','--bare', …, '--permission-mode',
-'bypassPermissions'], { cwd: /tmp/ch-delegate-*, env: PATH+auth })`. The result:
+## Stage 3c — BLOCKED before spawn (two real preconditions, not isolation cracks)
 
-- **`cwd` is not a cage.** A real bash can `cd /`, use absolute paths, follow symlinks — `cwd`
-  only sets the starting directory.
-- **Real secrets are readable.** The env is scrubbed, but the *files on disk* are not gated:
-  `gateloop/.env` (the real provider keys), `~/.ssh`, `~/.codex/auth.json`, `~/.aws` — all
-  readable by user `pollux`, i.e. by the agent.
-- **The real tree is writable.** It can write to `/data/python/codeharness_workspace/…`,
-  `$HOME`, anywhere the user can.
-- **Network is open.** `DELEGATION_NETWORK_POLICY` is metadata; nothing enforces it. The agent
-  can `curl` to exfiltrate.
-- **Permissions are bypassed.** `bypassPermissions` + no cage = maximum capability, zero
-  containment.
+The isolation gate passes, but real Claude cannot run yet:
 
-The 034.4 invariants do not catch this because the real process is **not on the code path they
-test**. The crack is not in one invariant — it is that **the cage they describe is not actually
-built for a real process.**
+**1. Auth not provisioned.** `claude --bare` authenticates **strictly via `ANTHROPIC_API_KEY`**.
+That key is **absent** from the broker env file (`gateloop/.env` has the DeepSeek/OpenAI keys
+from the router eval, not Anthropic). The subscription credential lives in `~/.claude` —
+**exactly what rule 1 forbids mounting** (it's the secret-dragging hole the cage prevents). So
+there is no clean credential for the broker to inject. **Resolution: you add a credential to the
+broker env** — either `ANTHROPIC_API_KEY=...` (API billing, `--bare` uses it directly) or, for
+subscription billing, a `CLAUDE_CODE_OAUTH_TOKEN` the broker can inject via env (so the token
+never becomes a file mount). I will not read or mount `~/.claude`.
 
-## The fix — build a REAL cage, then re-prove, then spend (ordering preserved)
-
-The host already has the tools: **`bwrap` (bubblewrap), `docker`, and `unshare` are present.**
-So a real cage is achievable without new dependencies. Required before 034.5 may run:
-
-1. **Wrap the `claude` spawn in a real OS jail** (recommend `bwrap`):
-   - `--unshare-net` (or `--unshare-all` + no net) → network genuinely default-deny;
-   - bind **only** the sandbox copy writable (`--bind <sandbox> /work`, `--chdir /work`);
-   - **no** bind of `$HOME`, the real repo, `gateloop/.env`, `~/.ssh`, `~/.codex`, `/etc` secrets;
-   - `--die-with-parent`, `--new-session`, drop caps; pass auth only via the broker-provisioned
-     child env (never a file mount).
-2. **Re-prove the four invariants against a REAL process inside the jail** (still zero-cost): a
-   tiny probe (not Claude) that tries to `cat` a planted fake secret, write outside `/work`, and
-   `curl` a denied host — assert all three fail *from inside the bwrap jail*, and that the auth
-   value is absent from the jail's filesystem. This upgrades 034.4 from "harness helpers refuse
-   escapes" to "a real confined process cannot escape."
-3. **Only then** run real Claude Code inside the proven jail under `runGated` + broker.
-
-This keeps the mandatory, irreversible ordering intact: the cage is proven on a **real process**
-before a **real spend**.
-
-## Single-variable note
-
-Unchanged intent: when it does run, it stays cli_mode · one CLI (Claude Code) · one trivial
-story. The fix above is about *enforcement*, not scope.
+**2. Network isolation vs. the model API — unresolved design tension.** The **proven** cage is
+`--network none`. But Claude Code must reach **`api.anthropic.com`** to run the model — and the
+033 delegation allowlist permits only package registries (`registry.npmjs.org`, `pypi.org`, …),
+**not the model API host**. So even with auth, the airtight cage blocks Claude's own API call →
+no work happens. Bridging this needs a **narrow, airtight egress path to only
+`api.anthropic.com`** (a filtering proxy or per-host egress allowlist), which is **not built**
+— and is itself security-sensitive: a too-loose allowlist reopens exfiltration (the very thing
+`--network none` prevents). This is a design decision, not a one-line flag.
 
 ## Honest conclusion
 
-The minimal CLI-mode bridge (mode abstraction 034.2, controlled-bash observation/diff 034.3) is
-sound **as a model**. But the **isolation enforcement** for a real autonomous bash does not yet
-exist — 034.4 proved the design predicates over the harness's own helpers, not a real process.
-**The bridge is not yet safe to point at a real CLI.** Patch the cage (build it, re-prove on a
-real process) before continuing. Do not spend until the jail is proven on a real process.
+- The cage is **real and proven**, and the Stage-3 mounting/baking attack surface is **closed**
+  (5/5 invariants hold with claude in the image; no secrets dragged in).
+- The minimal CLI-mode bridge is **end-to-end ready except for the two preconditions above**.
+  Neither is an isolation failure — they are (a) credential provisioning (yours), and (b) a real
+  isolation-vs-model-API design choice (a narrow egress allowlist to `api.anthropic.com`).
+- **Nothing was spent.** I stopped at the precondition wall rather than weaken isolation (mount
+  `~/.claude`) or open the network broadly. Both would defeat the point of the cage.
+
+## To unblock Stage 3c
+
+1. Provide a credential to the broker env (`ANTHROPIC_API_KEY` or `CLAUDE_CODE_OAUTH_TOKEN`) —
+   never a `~/.claude` mount.
+2. Decide the egress approach to `api.anthropic.com`: a host-side filtering proxy the cage uses
+   via `HTTPS_PROXY` (cage stays `--network none` except to the proxy), or a per-host egress
+   allowlist. I’ll build + re-prove (the egress must allow ONLY the model host) before spending.
+
+Then the gated runner spawns real Claude Code in the proven cage, records its bash from the
+observation stream (the real isolation test), gates the diff, and auto-closes via runGated.

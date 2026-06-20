@@ -19,11 +19,15 @@ import { fileURLToPath } from 'node:url';
 import { buildDockerCageArgv, runInCage } from '../../packages/external-agent/src/osCage.ts';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const IMAGE = 'cage-probe:latest';
+const IMAGE = process.argv[2] || 'cage-probe:latest';
 const FAKE_KEY = 'sk-FAKE-cage-proof-000000000000-not-a-real-key';
 
-// Ensure the OFFLINE cage image exists (no network pull).
-execFileSync('bash', [path.join(here, 'build-cage-image.sh'), IMAGE], { stdio: 'inherit' });
+// Ensure the OFFLINE cage image exists (no network pull). The busybox proof image is built
+// here; a pre-built image (e.g. cage-claude) is assumed present (built by its own script).
+if (IMAGE === 'cage-probe:latest') {
+  execFileSync('bash', [path.join(here, 'build-cage-image.sh'), IMAGE], { stdio: 'inherit' });
+}
+console.log(`\n=== proving isolation against a REAL process in image: ${IMAGE} ===`);
 
 // A real sandbox copy (the only writable mount) + a FAKE host secret planted OUTSIDE it.
 const sandboxRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'cage-sandbox-'));
@@ -54,6 +58,10 @@ if busybox wget -T 3 -q -O - http://1.1.1.1/ 2>/dev/null >/dev/null; then echo "
 echo "## broker-env"
 if [ -n "$ANTHROPIC_API_KEY" ]; then echo "OK_AUTH_PRESENT"; else echo "FAIL_NO_AUTH"; fi
 echo "HOME_IS=\${HOME:-unset}"
+echo "## image-secret-scan (mounting/baking did NOT drag in \\$HOME secrets or tool config)"
+if [ -d /home ] && [ -n "$(ls -A /home 2>/dev/null)" ]; then echo "LEAK_IMG:/home_nonempty"; else echo "OK_NO_HOME_IN_IMAGE"; fi
+for f in $(find / -xdev \\( -name '.claude*' -o -name 'auth.json' -o -name '.env' -o -name 'id_rsa' -o -name '.npmrc' -o -name '.netrc' -o -name 'credentials' \\) 2>/dev/null); do echo "LEAK_IMG:$f"; done
+echo "OK_SECRET_SCAN_DONE"
 `;
 
 const run = runInCage({
@@ -105,9 +113,17 @@ results.push({ invariant: 'real_process_network_denied', held: leakNet.length ==
 const authPresent = out.includes('OK_AUTH_PRESENT');
 const keyOnDisk = treeContains(sandboxRoot, FAKE_KEY);
 const homeVal = (out.match(/HOME_IS=(\S*)/)?.[1] ?? '').trim();
-const homeNotHost = (homeVal === 'unset' || homeVal === '/' || homeVal === '') && !homeVal.includes('/home/') && !homeVal.includes('pollux');
+// SAFE iff HOME is not the host home (host $HOME would mean /home/... was exposed). The cage
+// uses HOME=/work (the sandbox) or /, unset — none of which expose the host home.
+const homeNotHost = homeVal !== '' && !homeVal.includes('/home/') && !homeVal.includes('pollux');
 results.push({ invariant: 'broker_auth_no_plaintext_real_process', held: authPresent && !keyOnDisk && homeNotHost,
   detail: authPresent && !keyOnDisk && homeNotHost ? 'auth value present in cage env only; absent from sandbox disk; host HOME not inherited' : `authPresent=${authPresent} keyOnDisk=${keyOnDisk} homeNotHost=${homeNotHost}` });
+
+// 5. mounting/baking did not drag in $HOME secrets or tool config (the Stage-3 attack surface)
+const leakImg = (out.match(/LEAK_IMG:\S+/g) ?? []);
+const scanDone = out.includes('OK_SECRET_SCAN_DONE');
+results.push({ invariant: 'no_home_or_secret_config_in_cage_image', held: leakImg.length === 0 && scanDone,
+  detail: leakImg.length === 0 && scanDone ? 'no $HOME, .claude, auth.json, .env, .ssh, .npmrc, credentials anywhere in the cage image' : `LEAKED: ${leakImg.join(', ') || '(scan incomplete)'}` });
 
 // Cleanup.
 fs.rmSync(sandboxRoot, { recursive: true, force: true });
@@ -117,5 +133,5 @@ console.log('\n──── REAL-PROCESS isolation invariants ────');
 for (const r of results) console.log(`${r.held ? 'HELD ' : 'FAIL '} ${r.invariant} — ${r.detail}`);
 const allHeld = results.every(r => r.held);
 console.log(`\ncage argv: docker ${buildDockerCageArgv({ image: IMAGE, sandboxRoot: '<sandbox>', command: ['/bin/sh'] }).join(' ')}`);
-console.log(allHeld ? '\nALL FOUR INVARIANTS HELD against a real confined process — cage is real. (zero cost)' : '\nISOLATION CRACK — do NOT run real Claude Code.');
+console.log(allHeld ? `\nALL ${results.length} INVARIANTS HELD against a real confined process — cage is real. (zero cost)` : '\nISOLATION CRACK — do NOT run real Claude Code.');
 process.exit(allHeld ? 0 : 1);
