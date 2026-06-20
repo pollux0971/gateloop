@@ -107,7 +107,15 @@ probe — **4/4**: anthropic reachable via proxy, every other host denied (403),
 bypass blocked (`--internal` no route), and the **proxy log is NOT empty** (it shows the
 anthropic CONNECT — the exact contrast to this run's empty log). Wired into the live path
 (`osCage.dockerNetwork` + `gated-claude-run`). Lesson recorded in the root `CLAUDE.md`
-(容器 egress 隔離規則：設了≠生效，必驗). Open item for the next real run: confirm Claude
-honors `HTTPS_PROXY` on the `--internal` net (this run showed it went direct; if it
-ignores the proxy env it would be blocked with no route → a transparent/iptables redirect
-would be needed). Both layers are now real, enforced boundaries.
+(容器 egress 隔離規則：設了≠生效，必驗). Both layers are now real, enforced boundaries.
+
+## Update (2026-06-20, run#13) — Claude HONORS HTTPS_PROXY: open item CLOSED
+
+The open item above ("confirm Claude honors `HTTPS_PROXY` on the `--internal` net") is
+**resolved: YES**. A gated run (`cli_mode_claude_proxy_verify_20260620_202810`) spawned real
+Claude in the hardened `--internal` cage; the story **completed** (Write `/work/slugify.mjs`,
+exit-gate ACCEPTED) and `proxy.log` was **NOT empty** — 3× `CONNECT api.anthropic.com:443 ->
+ALLOWED` (the exact contrast to this report's original empty log). Since `--internal` has no
+direct route, story-completed + log-non-empty ⟹ Claude routed its egress through the proxy.
+**No transparent/iptables redirect is needed; the spawn-CLI architecture is complete and
+usable.** See `CLAUDE_PROXY_VERIFY_REPORT.md`.
