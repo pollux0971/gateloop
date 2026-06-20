@@ -29,14 +29,10 @@ import {
 } from '@gateloop/agent-delegate';
 import { decideDelegationOutcome, type DelegationOutcomeDecision } from '@gateloop/harness-core';
 
-// Controlled-bash bridge (STORY-034.3).
-export * from './controlledBash';
-
-// Sandbox isolation invariants — the 034.5 barrier (STORY-034.4).
-export * from './isolation';
-
-// OS-enforced sandbox cage (STORY-034.5).
-export * from './osCage';
+// NOTE (STORY-035.7 cleanup): the spawn-CLI modules controlledBash (034.3), isolation (034.4),
+// and osCage (034.5) were removed — the in-process provider path (EPIC-035) replaced them and
+// nothing retained imported them. The inherited mode abstraction (DiffProducer/runBuilderMode)
+// and the exit gate below are unaffected. See ADR-019 §4.3 / ADR-020.
 
 // ── Mode selection ───────────────────────────────────────────────────────────────
 

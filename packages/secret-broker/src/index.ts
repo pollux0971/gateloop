@@ -97,43 +97,7 @@ export function meteredKeyHandle(provider: string): SecretHandle {
   return { handle_id: `metered:${provider}`, handle_type: 'metered_api_key', provider };
 }
 
-export interface ClaudeOAuthResolution {
-  token: string;
-  expiresAt?: number;
-  expired: boolean;
-}
-
-/**
- * Resolve the Claude Code OAuth access token from a credentials.json (default
- * `~/.claude/.credentials.json`) IN A CHILD PROCESS — STORY-034.5 token injection (option 3).
- *
- * The harness (broker) reads the credential — its job, exactly like resolving `.env` keys —
- * in a short-lived child that prints ONLY the token. The agent process never `cat`s the
- * file, the token is copied to NO new file (returned in-memory for the cage's
- * `-e CLAUDE_CODE_OAUTH_TOKEN` only), and the credential stays in its mode-600 original.
- * The cage never mounts the file — only the value enters its env. Throws if absent/unreadable.
- */
-export function readClaudeOAuthToken(opts: { credentialsPath?: string } = {}): ClaudeOAuthResolution {
-  const home = process.env.HOME ?? '';
-  const credPath = opts.credentialsPath ?? `${home}/.claude/.credentials.json`;
-  const r = spawnSync(
-    process.execPath, // the current node binary (avoids a snap/PATH `node` that won't nest-spawn)
-    [
-      '-e',
-      [
-        'const fs=require("fs");',
-        'const j=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));',
-        'const o=j.claudeAiOauth||{};',
-        'if(!o.accessToken){process.stderr.write("no claudeAiOauth.accessToken");process.exit(3);}',
-        'process.stdout.write(JSON.stringify({token:o.accessToken,expiresAt:o.expiresAt??null}));',
-      ].join(''),
-      credPath,
-    ],
-    { encoding: 'utf8' },
-  );
-  if (r.status !== 0) throw new Error(`claude credentials read failed: ${(r.stderr || '').trim() || `exit ${r.status}`}`);
-  const parsed = JSON.parse(r.stdout) as { token: string; expiresAt: number | null };
-  if (!parsed.token) throw new Error('claude credentials: empty token');
-  const expired = typeof parsed.expiresAt === 'number' ? parsed.expiresAt <= Date.now() : false;
-  return { token: parsed.token, expiresAt: parsed.expiresAt ?? undefined, expired };
-}
+// NOTE (STORY-035.7 cleanup): readClaudeOAuthToken + ClaudeOAuthResolution were removed — they
+// resolved the ~/.claude subscription token for the spawn-CLI cage (034.5), the only consumer.
+// The in-process subscription path (035.6) uses Codex OAuth via @gateloop/subscription-auth
+// (~/.gateloop/codex-auth.json), and the metered core uses standard API keys. See ADR-019 §4.3.
