@@ -1360,3 +1360,12 @@ export {
   type ProviderPermissionVerdict,
   type ProviderCanUseToolOptions,
 } from './providerToolPolicy.ts';
+
+// ── STORY-035.4: confinement barrier precondition gate (→ 035.5) ──────────────
+export {
+  confinementBarrierGate,
+  requireConfinementBeforeSpend,
+  type ConfinementBarrierLike,
+  type ConfinementInvariantLike,
+  type ConfinementGateResult,
+} from './providerConfinementGate.ts';

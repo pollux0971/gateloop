@@ -48,6 +48,19 @@ function mapFinishReason(reason: string): StopReason {
 
 const truncate = (s: string, n = 200): string => (s.length > n ? s.slice(0, n) + '…' : s);
 
+/** Deep-apply the redactor to every string in a value — so a resolved secret never survives in
+ *  `raw` either (defense-in-depth: the event carries no plaintext anywhere, not just in summary). */
+function redactValue(value: unknown, redact: (s: string) => string): unknown {
+  if (typeof value === 'string') return redact(value);
+  if (Array.isArray(value)) return value.map((v) => redactValue(v, redact));
+  if (value && typeof value === 'object') {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value)) out[k] = redactValue(v, redact);
+    return out;
+  }
+  return value;
+}
+
 /**
  * Map one engine part to an AgentEvent, applying `redact` to every human-readable summary
  * (the broker's redactor — a resolved key must never reach a trace). Returns null for parts
@@ -59,7 +72,8 @@ export function mapEnginePartToAgentEvent(
   redact: (s: string) => string = (s) => s,
 ): AgentEvent | null {
   const cli = backendToCliKind(backendId);
-  const base = { cli, raw: { backendId, ...(part as Record<string, unknown>) } } as const;
+  const rawObj = redactValue({ backendId, ...(part as Record<string, unknown>) }, redact) as Record<string, unknown>;
+  const base = { cli, raw: rawObj } as const;
   switch (part.type) {
     case 'text-delta':
       return { ...base, kind: 'message', summary: redact(truncate(part.text)) };

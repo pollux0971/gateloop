@@ -74,3 +74,10 @@ export {
   type StopHookInput,
   type ConfinedMediatorOptions,
 } from './confinement';
+
+export {
+  assertToolLayerConfinementBarrier,
+  FAKE_PLANTED_SECRET,
+  type ConfinementInvariant,
+  type ConfinementBarrierResult,
+} from './confinementProof';
