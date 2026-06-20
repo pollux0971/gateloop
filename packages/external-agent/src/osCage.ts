@@ -44,9 +44,18 @@ export interface DockerCageOptions {
   sandboxRoot: string;
   /** Argv to run inside the cage. */
   command: string[];
-  /** Broker-provisioned auth (VALUE only) injected via -e. Never a file mount. */
+  /** Non-secret env injected via `-e KEY=VALUE` (proxy is handled separately). */
   authEnv?: Record<string, string>;
-  /** Default false → `--network none` (OS-enforced default-deny). */
+  /** Secret env passed through by NAME (`-e NAME`, value from the spawner's env) so the
+   *  value never appears in the docker argv — used for the OAuth token. */
+  passthroughEnv?: string[];
+  /** Layer-1 egress (034.5): when set, the cage reaches the network ONLY via this
+   *  forward-proxy. Switches the network to bridge (the cage must reach the host proxy),
+   *  adds host.docker.internal:host-gateway, and sets HTTPS_PROXY/HTTP_PROXY. */
+  proxyUrl?: string;
+  /** Turn off Claude Code's non-essential traffic so only api.anthropic.com is contacted. */
+  disableTelemetry?: boolean;
+  /** Default false → `--network none` (OS-enforced default-deny). Ignored when proxyUrl set. */
   network?: boolean;
   /** Read-only container root (default true) with a writable ephemeral /tmp. */
   readOnlyRoot?: boolean;
@@ -67,8 +76,17 @@ export interface DockerCageOptions {
 export function buildDockerCageArgv(opts: DockerCageOptions): string[] {
   const args: string[] = ['run', '--rm', '--init'];
 
-  // NETWORK — OS-enforced default-deny.
-  args.push('--network', opts.network ? 'bridge' : 'none');
+  // NETWORK — default-deny (`--network none`). With a proxy, the cage gets bridge networking
+  // but reaches the internet ONLY through the host-side forward-proxy (Layer 1).
+  const networked = opts.proxyUrl ? 'bridge' : opts.network ? 'bridge' : 'none';
+  args.push('--network', networked);
+  if (opts.proxyUrl) {
+    args.push('--add-host', 'host.docker.internal:host-gateway');
+    args.push('--env', `HTTPS_PROXY=${opts.proxyUrl}`, '--env', `HTTP_PROXY=${opts.proxyUrl}`);
+  }
+  if (opts.disableTelemetry) {
+    args.push('--env', 'CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1', '--env', 'DISABLE_TELEMETRY=1', '--env', 'DISABLE_AUTOUPDATER=1');
+  }
 
   // PRIVILEGE — minimal.
   args.push('--cap-drop', 'ALL', '--security-opt', 'no-new-privileges');
@@ -88,6 +106,9 @@ export function buildDockerCageArgv(opts: DockerCageOptions): string[] {
 
   // ENV — host env NOT inherited; only broker-provisioned auth values.
   for (const [k, v] of Object.entries(opts.authEnv ?? {})) args.push('--env', `${k}=${v}`);
+  // Secret passthrough by NAME — the value comes from the spawner's env (set by the broker),
+  // so it never appears in the docker argv / process list / logs.
+  for (const name of opts.passthroughEnv ?? []) args.push('--env', name);
 
   args.push(opts.image, ...opts.command);
   return args;

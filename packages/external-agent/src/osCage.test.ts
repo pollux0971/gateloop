@@ -53,4 +53,27 @@ describe('OS cage argv builder (034.5) — structural invariants', () => {
       expect(a).not.toContain(bad);
     }
   });
+  it('proxyUrl routes egress through the forward-proxy only (Layer 1)', () => {
+    const a = buildDockerCageArgv({ ...BASE, proxyUrl: 'http://host.docker.internal:8889' });
+    expect(a[a.indexOf('--network') + 1]).toBe('bridge'); // needs net to reach the proxy
+    expect(a.join(' ')).toContain('--add-host host.docker.internal:host-gateway');
+    expect(a.join(' ')).toContain('HTTPS_PROXY=http://host.docker.internal:8889');
+    expect(a.join(' ')).toContain('HTTP_PROXY=http://host.docker.internal:8889');
+  });
+
+  it('disableTelemetry sets the non-essential-traffic kill switches', () => {
+    const a = buildDockerCageArgv({ ...BASE, disableTelemetry: true }).join(' ');
+    expect(a).toContain('CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1');
+    expect(a).toContain('DISABLE_TELEMETRY=1');
+    expect(a).toContain('DISABLE_AUTOUPDATER=1');
+  });
+
+  it('passthroughEnv emits -e NAME (value NOT in argv — token stays out of the process list)', () => {
+    const a = buildDockerCageArgv({ ...BASE, passthroughEnv: ['CLAUDE_CODE_OAUTH_TOKEN'] });
+    // present as a bare passthrough name...
+    const envs = a.filter((_, i) => a[i - 1] === '--env');
+    expect(envs).toContain('CLAUDE_CODE_OAUTH_TOKEN');
+    // ...and NEVER as KEY=VALUE (no token value in the argv)
+    expect(a.join(' ')).not.toMatch(/CLAUDE_CODE_OAUTH_TOKEN=/);
+  });
 });
