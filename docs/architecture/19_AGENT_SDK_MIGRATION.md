@@ -1,5 +1,12 @@
 # ADR-19 — Migrate the external builder from spawn-CLI to the Claude Agent SDK
 
+> **⚠ Auth/driver axis SUPERSEDED by [ADR-20](./20_SUBSCRIPTION_BACKENDS_OPENCODE_STYLE.md).**
+> The "direct-backend vs spawn-CLI" thesis here still holds (asset judgment §4, security
+> transition §3, "設定≠生效" §3.2, spawn-CLI dead-code list §4.3 are all retained). But the
+> **Claude Agent SDK cannot use a claude.ai subscription** (§2.5 / §6.1) — so ADR-20 replaces the
+> auth + driver with an **opencode-style multi-provider layer on *subscription* backends**
+> (Codex/ChatGPT primary). Read this ADR for the retained parts; read ADR-20 for the auth/driver.
+
 **Status:** Proposed — investigation/design only. No code changed; the dead-code list in §5
 is a *proposal awaiting human confirmation* (deletion is a boundary-crossing big move).
 **Date:** 2026-06-20 · **Supersedes the execution form of:** ADR-17 (External-Agent
