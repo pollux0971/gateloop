@@ -9,6 +9,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import {
   SecretBroker, processEnvSource, subprocessEnvSource, staticSource,
+  readClaudeOAuthToken,
   type SecretHandle,
 } from './index';
 
@@ -56,5 +57,38 @@ describe('secret-broker — subprocess source (agent never reads .env)', () => {
   it('a missing env file resolves to empty (clean), not a crash', async () => {
     const broker = new SecretBroker(subprocessEnvSource({ envFile: '/no/such/file.env' }));
     expect(await broker.resolve(HANDLE)).toBe('');
+  });
+});
+
+describe('secret-broker — Claude OAuth token from ~/.claude/.credentials.json (034.5, option 3)', () => {
+  const tmp: string[] = [];
+  afterEach(() => { while (tmp.length) fs.rmSync(tmp.pop()!, { recursive: true, force: true }); });
+  const writeCreds = (obj: unknown): string => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'claude-creds-'));
+    tmp.push(dir);
+    const p = path.join(dir, '.credentials.json');
+    fs.writeFileSync(p, JSON.stringify(obj));
+    return p;
+  };
+
+  it('parses claudeAiOauth.accessToken from a FAKE credentials.json (child process; agent never reads it)', () => {
+    const p = writeCreds({ claudeAiOauth: { accessToken: 'sk-ant-oat-FAKE-034dot5', refreshToken: 'r', expiresAt: Date.now() + 3_600_000, scopes: [], subscriptionType: 'max' } });
+    const r = readClaudeOAuthToken({ credentialsPath: p });
+    expect(r.token).toBe('sk-ant-oat-FAKE-034dot5');
+    expect(r.expired).toBe(false);
+  });
+
+  it('flags an expired token (expiresAt in the past)', () => {
+    const p = writeCreds({ claudeAiOauth: { accessToken: 'sk-ant-oat-FAKE-old', expiresAt: 1 } });
+    expect(readClaudeOAuthToken({ credentialsPath: p }).expired).toBe(true);
+  });
+
+  it('throws when no accessToken is present (never silently returns empty)', () => {
+    const p = writeCreds({ claudeAiOauth: { refreshToken: 'r' } });
+    expect(() => readClaudeOAuthToken({ credentialsPath: p })).toThrow();
+  });
+
+  it('throws on a missing credentials file', () => {
+    expect(() => readClaudeOAuthToken({ credentialsPath: '/nonexistent/.credentials.json' })).toThrow();
   });
 });
