@@ -171,3 +171,73 @@ export function defaultHighLevelTools(backends: { codegraph?: CodegraphBackend }
   if (backends.codegraph) tools.push(makeCodegraphTool(backends.codegraph));
   return tools;
 }
+
+// ── Provider-mode MCP tool surface (EPIC-035 / STORY-035.3) ──────────────────────────
+// The in-process provider path exposes ONLY these high-level tools to the model, under the
+// `mcp__gateloop__*` namespace. There is NO shell/Bash tool — the model never sees one, so it
+// cannot run arbitrary commands; it can only act through these declared, schema-checked tools.
+
+/** The MCP server namespace the provider exposes GateLoop's tools under. */
+export const PROVIDER_MCP_PREFIX = 'mcp__gateloop__';
+
+/** Namespaced MCP tool name for a bare tool id (e.g. 'apply_patch' → 'mcp__gateloop__apply_patch'). */
+export function mcpToolName(tool: string): string {
+  return tool.startsWith(PROVIDER_MCP_PREFIX) ? tool : `${PROVIDER_MCP_PREFIX}${tool}`;
+}
+
+/** Strip the MCP namespace back to the bare tool id. */
+export function bareToolName(name: string): string {
+  return name.startsWith(PROVIDER_MCP_PREFIX) ? name.slice(PROVIDER_MCP_PREFIX.length) : name;
+}
+
+/** Detect a shell/Bash-like tool name — these are NEVER exposed and are denied if attempted
+ *  (defense-in-depth beyond simply omitting them from the surface). */
+export function isShellLikeTool(name: string): boolean {
+  return /(^|_|:)(bash|sh|shell|exec|cmd|command|terminal|run_shell|runshell)$/i.test(bareToolName(name).trim());
+}
+
+/** The agent's structured completion report — the Stop hook requires this was called. */
+export function reportTool(): ToolDefinition {
+  return {
+    name: 'report',
+    description: 'Report the structured outcome of the task (summary + changed files). Required before stopping.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        summary: { type: 'string', description: 'what was done' },
+        changed_files: { type: 'array', description: 'files changed (advisory; the git diff is authoritative)' },
+      },
+      required: ['summary'],
+    },
+    output_schema: { type: 'object', properties: { acknowledged: { type: 'boolean' } } },
+    handler: () => ({ acknowledged: true }),
+  };
+}
+
+/**
+ * The full provider-mode tool surface: the high-level tools + apply_patch/git_diff/report,
+ * all under the MCP namespace. Bash/shell is deliberately ABSENT. This is the only tool set the
+ * model is offered in provider mode (035.3).
+ */
+export function providerToolSet(backends: { codegraph?: CodegraphBackend } = {}): ToolDefinition[] {
+  const applyPatch: ToolDefinition = {
+    name: 'apply_patch',
+    description: 'Apply a unified-diff patch to the workspace (confined to the write-set; the harness enforces it).',
+    input_schema: { type: 'object', properties: { patch: { type: 'string', description: 'unified diff' } }, required: ['patch'] },
+    output_schema: { type: 'object', properties: { applied: { type: 'boolean' } } },
+    handler: () => ({ applied: true }),
+  };
+  const gitDiff: ToolDefinition = {
+    name: 'git_diff',
+    description: 'Read the current git diff of the workspace vs the pre-task tree (read-only).',
+    input_schema: { type: 'object', properties: {} },
+    output_schema: { type: 'object', properties: { diff: { type: 'string' } } },
+    handler: () => ({ diff: '' }),
+  };
+  return [...defaultHighLevelTools(backends), applyPatch, gitDiff, reportTool()];
+}
+
+/** The MCP-namespaced names the model sees (Bash absent by construction). */
+export function providerMcpToolNames(backends: { codegraph?: CodegraphBackend } = {}): string[] {
+  return providerToolSet(backends).map((t) => mcpToolName(t.name));
+}

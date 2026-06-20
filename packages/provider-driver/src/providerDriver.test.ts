@@ -99,6 +99,21 @@ describe('STORY-035.2: ProviderDriver drives a backend in-process (scripted, zer
     expect(JSON.stringify(results[0].raw)).not.toContain('sneaky');
   });
 
+  it('calls the mediator Stop hook after the stream and surfaces a blocked stop (035.3)', async () => {
+    let stopCalled = 0;
+    const mediator: ProviderToolMediator = {
+      tools: () => [],
+      mediate: () => ({ allowed: true, output: {} }),
+      onStop: () => { stopCalled++; return { ok: false, reason: 'no report' }; },
+    };
+    const engine = createScriptedEngine({ parts: [{ type: 'finish', finishReason: 'stop', usage: { inputTokens: 1, outputTokens: 1 } }] });
+    const evs = await collect(new ProviderDriver({ engine, toolMediator: mediator }).run(PACKET, SANDBOX));
+    expect(stopCalled).toBe(1);
+    const blocked = evs.find((e) => (e.raw as { stop_blocked?: boolean })?.stop_blocked);
+    expect(blocked).toBeDefined();
+    expect(blocked!.summary).toContain('stop_blocked');
+  });
+
   it('applies the redactor to every event summary', async () => {
     const engine = createScriptedEngine({ parts: [{ type: 'text-delta', text: 'key=SECRET' }, { type: 'finish', finishReason: 'stop', usage: { inputTokens: 1, outputTokens: 1 } }] });
     const evs = await collect(new ProviderDriver({ engine, redact: (s) => s.split('SECRET').join('[X]') }).run(PACKET, SANDBOX));

@@ -1352,3 +1352,11 @@ export function decideDelegationOutcome(v: DelegationExitVerdictLike): Delegatio
   }
   return { action: 'route_debugger', reason: 'delegation exit gate rejected (gate failure within write-set); route to debugger' };
 }
+
+// ── STORY-035.3: provider-mode tool permission policy (canUseTool) ────────────
+export {
+  buildProviderCanUseTool,
+  type ProviderCanUseTool,
+  type ProviderPermissionVerdict,
+  type ProviderCanUseToolOptions,
+} from './providerToolPolicy.ts';

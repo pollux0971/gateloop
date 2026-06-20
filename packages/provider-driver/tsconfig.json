@@ -16,6 +16,8 @@
     { "path": "../agent-delegate" },
     { "path": "../secret-broker" },
     { "path": "../model-gateway" },
-    { "path": "../workspace-manager" }
+    { "path": "../workspace-manager" },
+    { "path": "../tool-interface" },
+    { "path": "../permission-gateway" }
   ]
 }

@@ -16,6 +16,8 @@
   ],
   "references": [
     { "path": "../event-log" },
-    { "path": "../settings" }
+    { "path": "../settings" },
+    { "path": "../permission-gateway" },
+    { "path": "../tool-interface" }
   ]
 }

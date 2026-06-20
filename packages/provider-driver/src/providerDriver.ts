@@ -29,11 +29,19 @@ export type ToolMediation =
   | { allowed: true; output: unknown }
   | { allowed: false; reason: string };
 
+/** Verdict of the Stop hook (035.3: require a report before the agent may stop). */
+export interface StopVerdict {
+  ok: boolean;
+  reason?: string;
+}
+
 /** The harness's mediation of a tool call (035.3: MCP-only + permission gateway + hooks). */
 export interface ProviderToolMediator {
   /** The tool surface offered to the model (035.3: high-level MCP tools, Bash absent). */
   tools(): EngineTool[];
   mediate(call: ToolCall): Promise<ToolMediation> | ToolMediation;
+  /** Stop hook — called by the driver after the stream ends (035.3: require a report). */
+  onStop?(): StopVerdict | Promise<StopVerdict>;
 }
 
 export interface ProviderDriverOptions {
@@ -108,6 +116,20 @@ export class ProviderDriver implements ProviderRunner {
 
       const ev = mapEnginePartToAgentEvent(this.backendId, part, redact);
       if (ev) yield ev;
+    }
+
+    // Stop hook (035.3): require a report before the agent may stop. A missing report does not
+    // crash the run — it is surfaced as an observable event so the exit gate / operator sees it.
+    if (toolMediator?.onStop) {
+      const verdict = await toolMediator.onStop();
+      if (!verdict.ok) {
+        yield {
+          cli,
+          kind: 'error',
+          summary: redact ? redact(`stop_blocked: ${verdict.reason ?? 'report required'}`) : `stop_blocked: ${verdict.reason ?? 'report required'}`,
+          raw: { backendId: this.backendId, stop_blocked: true, reason: verdict.reason },
+        };
+      }
     }
   }
 }
