@@ -1072,7 +1072,9 @@
         "pass_rate": 1.0,
         "at": "2026-06-21T00:00:00Z"
       },
-      "leakage_audit": "pass"
+      "leakage_audit": "pass",
+      "builtin": true,
+      "enabled": true
     },
     {
       "skill_id": "reviewer.ponytail-review",
@@ -1087,7 +1089,9 @@
         "pass_rate": 1.0,
         "at": "2026-06-21T00:00:00Z"
       },
-      "leakage_audit": "pass"
+      "leakage_audit": "pass",
+      "builtin": true,
+      "enabled": true
     }
   ]
 }

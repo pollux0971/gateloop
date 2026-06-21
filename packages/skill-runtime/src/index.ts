@@ -20,8 +20,19 @@ export interface FullSkillManifest {
   status?: 'draft' | 'needs_tests' | 'registered' | 'quarantined';
   tests?: string[];
   depends_on?: string[];
+  /** STORY-GATE.4: user on/off toggle (default true). Toggling is a pure user decision —
+   *  instant, NOT gated. A disabled skill is registered but not loaded into the prompt. */
+  enabled?: boolean;
+  /** STORY-GATE.4: shipped-by-default product skill (e.g. ponytail). Can be DISABLED by the
+   *  user but NEVER deleted (reinstallable product content). */
+  builtin?: boolean;
 }
 export interface ValidationResult { ok: boolean; errors: string[] }
+
+/** STORY-GATE.4: a skill is active when enabled !== false (default true). */
+export function skillEnabled(m: { enabled?: boolean }): boolean {
+  return m.enabled !== false;
+}
 
 /** Load and parse a skill's skill.json manifest from its package directory. */
 export function loadSkillManifest(skillDir: string): FullSkillManifest {
@@ -52,14 +63,15 @@ export interface SkillContent {
 }
 
 /**
- * Return only registered skills for the given role.
- * Quarantined, draft, and needs_tests skills are never returned.
+ * Return only registered AND enabled skills for the given role.
+ * Quarantined, draft, needs_tests, and user-disabled skills are never returned.
+ * STORY-GATE.4: the `&& skillEnabled` is the runtime half of the user on/off toggle.
  */
 export function selectSkillsForRole(
   manifests: FullSkillManifest[],
   role: FullSkillManifest['agent_role'],
 ): FullSkillManifest[] {
-  return manifests.filter(m => m.agent_role === role && m.status === 'registered');
+  return manifests.filter(m => m.agent_role === role && m.status === 'registered' && skillEnabled(m));
 }
 
 /**
@@ -173,7 +185,8 @@ export function loadMountedSkillsForRole(
   }
 
   const entries = (catalog.skills ?? []).filter(
-    s => s.agent_role === role && s.status === 'registered',
+    // STORY-GATE.4: a user-disabled (enabled:false) skill is registered but not mounted.
+    s => s.agent_role === role && s.status === 'registered' && (s as { enabled?: boolean }).enabled !== false,
   );
 
   // Build full manifests (with depends_on + description from each skill.json) so the
@@ -219,4 +232,40 @@ export function loadMountedSkillsForRole(
       token_estimate: Math.ceil((body.length + content.avoid_lines.join('\n').length) / 4),
     };
   });
+}
+
+// ── STORY-GATE.4: skill mutation policy (user decisions vs the test-gate guardrail) ──
+//
+// ADR-025 §4c: enable/disable + delete-non-builtin are pure USER decisions (un-gated,
+// instant). Two things are NOT user-blocks but guardrails / product rules:
+//   - adding a NEW skill still goes through the lifecycle test-gate (an untested skill
+//     could steer the agent wrong — like an app store scanning before install);
+//   - a builtin skill (ponytail) can be DISABLED but never DELETED (reinstallable).
+
+export interface SkillMutationResult { ok: boolean; error?: string }
+
+/** Toggle a skill on/off — a pure user decision. Returns the updated manifest; NEVER gated. */
+export function setSkillEnabled<T extends { enabled?: boolean }>(m: T, enabled: boolean): T {
+  return { ...m, enabled };
+}
+
+/** Delete policy: a builtin skill is refused (disable it instead); anything else is allowed. */
+export function canDeleteSkill(m: { builtin?: boolean; skill_id?: string }): SkillMutationResult {
+  if (m.builtin) {
+    return { ok: false, error: `builtin skill${m.skill_id ? ` '${m.skill_id}'` : ''} cannot be deleted; disable it instead` };
+  }
+  return { ok: true };
+}
+
+/**
+ * Register/add policy: a NEW skill must clear the lifecycle test-gate (have tests). This
+ * is an AGENT guardrail, not a user-block — it never depends on who is asking, only on
+ * whether the skill is safe to let the agent use. The full gate (tests pass + robustness +
+ * leakage) lives in @gateloop/skill-tester; this is the structural precondition.
+ */
+export function canRegisterSkill(m: FullSkillManifest): SkillMutationResult {
+  if (rejectSkillWithoutTests(m)) {
+    return { ok: false, error: 'skill has no tests/ — must pass the lifecycle test-gate before registration' };
+  }
+  return { ok: true };
 }

@@ -171,3 +171,56 @@ describe('STORY-UST.2 ponytail-lazy registered developer skill', () => {
     expect(pony!.body.toLowerCase()).not.toContain('statusline');
   });
 });
+
+// ── STORY-GATE.4: enabled + builtin flags + mutation policy ──
+import { skillEnabled, setSkillEnabled, canDeleteSkill, canRegisterSkill } from './index';
+describe('STORY-GATE.4 enabled + builtin', () => {
+  const dev = (o: Partial<FullSkillManifest>): FullSkillManifest =>
+    ({ skill_id: 'developer.x', agent_role: 'developer', path: 'skills/developer/x', status: 'registered', tests: ['t'], ...o });
+
+  it('enabled_flag_per_skill_default_true', () => {
+    expect(skillEnabled({})).toBe(true);            // undefined → true
+    expect(skillEnabled({ enabled: true })).toBe(true);
+    expect(skillEnabled({ enabled: false })).toBe(false);
+  });
+
+  it('runtime_filter_selectSkillsForRole_respects_enabled', () => {
+    const ms = [dev({ skill_id: 'developer.on' }), dev({ skill_id: 'developer.off', enabled: false })];
+    expect(selectSkillsForRole(ms, 'developer').map(s => s.skill_id)).toEqual(['developer.on']);
+  });
+
+  it('toggle_enabled_un_gated_instant_user_decision', () => {
+    // setSkillEnabled is a pure mutation — no gate, no test, no approval
+    const off = setSkillEnabled(dev({ skill_id: 'developer.x' }), false);
+    expect(off.enabled).toBe(false);
+    expect(setSkillEnabled(off, true).enabled).toBe(true);
+  });
+
+  it('builtin_flag_ponytail_lazy_and_review_marked_builtin (catalog)', () => {
+    const repoRoot = fileURLToPath(new URL('../../../', import.meta.url));
+    const cat = JSON.parse(fs.readFileSync(path.join(repoRoot, 'skills', 'skill_manifest.json'), 'utf8'));
+    const pony = cat.skills.filter((s: any) => s.skill_id === 'developer.ponytail-lazy' || s.skill_id === 'reviewer.ponytail-review');
+    expect(pony.length).toBe(2);
+    for (const s of pony) expect(s.builtin).toBe(true);
+  });
+
+  it('delete_builtin_refused_disable_instead', () => {
+    expect(canDeleteSkill({ builtin: true, skill_id: 'developer.ponytail-lazy' }).ok).toBe(false);
+    expect(canDeleteSkill({ builtin: true, skill_id: 'developer.ponytail-lazy' }).error).toMatch(/disable it instead/);
+    expect(canDeleteSkill({ builtin: false, skill_id: 'user.custom' }).ok).toBe(true);   // non-builtin deletes freely
+    expect(canDeleteSkill({ skill_id: 'user.custom' }).ok).toBe(true);                    // undefined builtin = deletable
+  });
+
+  it('add_new_skill_still_through_lifecycle_test_gate_guardrail', () => {
+    // adding a skill WITHOUT tests is refused — the test-gate is an agent guardrail, not a user-block
+    expect(canRegisterSkill(dev({ skill_id: 'user.new', tests: [] })).ok).toBe(false);
+    expect(canRegisterSkill(dev({ skill_id: 'user.new', tests: [] })).error).toMatch(/test-gate/);
+    expect(canRegisterSkill(dev({ skill_id: 'user.new', tests: ['tests/test_skill.py'] })).ok).toBe(true);
+  });
+
+  it('disabling a builtin is allowed (can-disable-cannot-delete)', () => {
+    const pony = dev({ skill_id: 'developer.ponytail-lazy', builtin: true });
+    expect(setSkillEnabled(pony, false).enabled).toBe(false); // disable: fine
+    expect(canDeleteSkill(pony).ok).toBe(false);              // delete: refused
+  });
+});
