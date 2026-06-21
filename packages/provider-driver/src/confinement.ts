@@ -11,12 +11,48 @@ import type { EngineTool } from './engine';
 import type { ProviderToolMediator, ToolCall, ToolMediation, StopVerdict } from './providerDriver';
 import {
   type ToolDefinition,
+  type CodegraphBackend,
   providerToolSet,
   mcpToolName,
   bareToolName,
   isShellLikeTool,
   validateAgainstSchema,
 } from '@gateloop/tool-interface';
+import { lookupSymbol, computeImpactSet, type CodeGraphClient } from '@gateloop/codegraph-adapter';
+
+// ── EPIC-CW.5 (Mode 2): bridge a CodeGraphClient → the query_codegraph tool backend ──────
+// The agent-facing query_codegraph tool wants `query(operation, {target}) → {summary}`; the real
+// engine speaks the adapter's CodeGraphClient (`query({operation,target}) → {locations,impacted}`).
+// This bridge maps between them, READ-ONLY (it only queries — no mutation of the repo or index).
+// The harness builds it from a real engineClient (codegraph-client) and passes it as `codegraph`.
+export function codegraphBackendFromClient(client: CodeGraphClient): CodegraphBackend {
+  return {
+    async query(operation, args) {
+      const target = String((args as { target?: unknown }).target ?? '');
+      switch (operation) {
+        case 'search':
+        case 'trace':
+        case 'symbol_lookup': {
+          const r = await lookupSymbol(target, client);
+          return { summary: r.summary, locations: r.locations };
+        }
+        case 'impact': {
+          const r = await computeImpactSet(target.split(',').map((s) => s.trim()).filter(Boolean), client);
+          return { summary: r.summary, impacted_files: r.impactedFiles };
+        }
+        case 'callers':
+        case 'callees': {
+          const op = operation === 'callers' ? 'dependents' : 'dependencies';
+          const raw = await client.query({ operation: op, target });
+          const files = raw.impacted_files ?? [];
+          return { summary: `${operation} of ${target}: ${files.length} file(s)`, impacted_files: files };
+        }
+        default:
+          return { summary: `unsupported codegraph operation: ${operation}` };
+      }
+    },
+  };
+}
 
 // ── canUseTool (the permission gateway, allow/deny per call) ──────────────────────────
 export interface PermissionVerdict {
@@ -127,6 +163,9 @@ export interface ToolAuditRecord {
 export interface ConfinedMediatorOptions {
   /** The exposed tool surface (defaults to providerToolSet — high-level MCP tools, no Bash). */
   surface?: ToolDefinition[];
+  /** EPIC-CW.5 (Mode 2): a codegraph backend. When given (and no explicit surface), the READ-ONLY
+   *  query_codegraph tool is added to the default surface — behind this same default-deny layer. */
+  codegraph?: CodegraphBackend;
   /** Permission chain (canUseTool); ALL must allow. Surface permission is prepended automatically. */
   permissions?: ToolPermission[];
   preHooks?: PreToolUseHook[];
@@ -154,7 +193,7 @@ export class ConfinedToolMediator implements ProviderToolMediator {
   private reportSeen = false;
 
   constructor(opts: ConfinedMediatorOptions = {}) {
-    this.surface = opts.surface ?? providerToolSet();
+    this.surface = opts.surface ?? providerToolSet(opts.codegraph ? { codegraph: opts.codegraph } : {});
     const surfaceNames = this.surface.map((t) => t.name);
     this.surfaceBareNames = new Set(surfaceNames.map(bareToolName));
     this.permissions = [surfacePermission(surfaceNames), ...(opts.permissions ?? [])];

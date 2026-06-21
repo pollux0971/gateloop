@@ -279,7 +279,15 @@ importers:
 
   packages/preflight-runner: {}
 
-  packages/provider-driver: {}
+  packages/provider-driver:
+    dependencies:
+      '@gateloop/codegraph-adapter':
+        specifier: workspace:*
+        version: link:../codegraph-adapter
+    devDependencies:
+      '@gateloop/codegraph-client':
+        specifier: workspace:*
+        version: link:../codegraph-client
 
   packages/reviewer-runtime:
     dependencies:

@@ -4,5 +4,11 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@gateloop/codegraph-adapter": "workspace:*"
+  },
+  "devDependencies": {
+    "@gateloop/codegraph-client": "workspace:*"
   }
 }

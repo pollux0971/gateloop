@@ -58,6 +58,7 @@ export {
 
 export {
   ConfinedToolMediator,
+  codegraphBackendFromClient,
   surfacePermission,
   isWhitelistedTool,
   makeValidatingPreHook,
