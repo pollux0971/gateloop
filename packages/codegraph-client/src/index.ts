@@ -222,3 +222,127 @@ export function fixtureClient(spec: FixtureSpec = {}): GateloopCodegraphClient {
     },
   };
 }
+
+// ── STORY-CW.2: all adapter ops over the real engine (revive symbol_lookup) ──────────
+
+/** A graph node as returned by impact/callers/callees. */
+export interface RelatedNode {
+  name: string;
+  kind: string;
+  filePath: string;
+  startLine?: number;
+}
+
+/** Exported symbol names of an ESM source file (to drive symbol-level impact over a file set). */
+export function exportedSymbols(content: string): string[] {
+  const out = new Set<string>();
+  const re = /export\s+(?:async\s+)?(?:function|const|let|var|class)\s+([A-Za-z_$][\w$]*)/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(content)) !== null) out.add(m[1]);
+  const re2 = /export\s*\{([^}]*)\}/g;
+  while ((m = re2.exec(content)) !== null) {
+    for (const part of m[1].split(',')) {
+      const name = part.trim().split(/\s+as\s+/)[0].trim();
+      if (/^[A-Za-z_$][\w$]*$/.test(name)) out.add(name);
+    }
+  }
+  return [...out];
+}
+
+/** `codegraph impact <symbol> --json` → the transitively affected nodes (blast radius). */
+export function impactRaw(wsRoot: string, symbol: string, bin: ResolvedBin = mustResolve(), depth = 2): RelatedNode[] {
+  const r = runEngine(bin, ['impact', symbol, '--json', '--depth', String(depth)], wsRoot);
+  const p = parseJson(r.stdout) as { affected?: RelatedNode[] } | null;
+  return Array.isArray(p?.affected) ? p!.affected.filter((n) => n && typeof n.filePath === 'string') : [];
+}
+
+/** `codegraph callers <symbol> --json` → the call sites (references / dependents). */
+export function callersRaw(wsRoot: string, symbol: string, bin: ResolvedBin = mustResolve()): RelatedNode[] {
+  const r = runEngine(bin, ['callers', symbol, '--json'], wsRoot);
+  const p = parseJson(r.stdout) as { callers?: RelatedNode[] } | null;
+  return Array.isArray(p?.callers) ? p!.callers.filter((n) => n && typeof n.filePath === 'string') : [];
+}
+
+/** `codegraph callees <symbol> --json` → the outbound calls (dependencies). */
+export function calleesRaw(wsRoot: string, symbol: string, bin: ResolvedBin = mustResolve()): RelatedNode[] {
+  const r = runEngine(bin, ['callees', symbol, '--json'], wsRoot);
+  const p = parseJson(r.stdout) as { callees?: RelatedNode[] } | null;
+  return Array.isArray(p?.callees) ? p!.callees.filter((n) => n && typeof n.filePath === 'string') : [];
+}
+
+const DEFINITION_KINDS = new Set(['function', 'class', 'method', 'const', 'variable', 'interface', 'type', 'enum']);
+function nodeKindToLoc(kind: string | undefined): 'definition' | 'reference' {
+  return kind && DEFINITION_KINDS.has(kind) ? 'definition' : 'reference';
+}
+const uniq = (xs: string[]) => [...new Set(xs)];
+
+export interface EngineClientOptions {
+  wsRoot: string;
+  bin?: ResolvedBin;
+}
+
+/**
+ * A `CodeGraphClient` backed by the REAL engine — every adapter operation mapped to the engine's
+ * `--json` commands (STORY-CW.2). Passing this to the adapter's `lookupSymbol`/`computeImpactSet`
+ * makes them run over the real engine instead of the NULL stub. The engine stays a subprocess
+ * behind the seam; CI without an engine keeps using NULL_CLIENT / fixtureClient.
+ *   symbol_lookup → query (locate symbol → file:line)
+ *   impact        → per-file exported symbols → impact (blast radius)
+ *   dependents    → callers (who references it)
+ *   dependencies  → callees (what it calls)
+ *   callgraph     → callers ∪ callees
+ */
+export function engineClient(opts: EngineClientOptions): GateloopCodegraphClient {
+  const bin = opts.bin ?? mustResolve();
+  const ws = opts.wsRoot;
+  return {
+    backend: `engine:${bin.source}`,
+    async query(q) {
+      switch (q.operation) {
+        case 'symbol_lookup': {
+          const locations = queryRaw(ws, q.target, bin)
+            .filter((n) => n.name === q.target)
+            .map((n) => ({ file: n.filePath, line: n.startLine ?? 0, kind: nodeKindToLoc(n.kind) }));
+          return { locations, impacted_files: [] };
+        }
+        case 'impact': {
+          const files = q.target.split(',').map((s) => s.trim()).filter(Boolean);
+          const impacted = new Set<string>();
+          for (const f of files) {
+            const abs = path.join(ws, f);
+            if (!fs.existsSync(abs)) continue;
+            for (const sym of exportedSymbols(fs.readFileSync(abs, 'utf8'))) {
+              for (const a of impactRaw(ws, sym, bin)) {
+                if (a.filePath && !files.includes(a.filePath)) impacted.add(a.filePath);
+              }
+            }
+          }
+          return { locations: [], impacted_files: [...impacted] };
+        }
+        case 'dependents': {
+          const callers = callersRaw(ws, q.target, bin);
+          return {
+            locations: callers.map((c) => ({ file: c.filePath, line: c.startLine ?? 0, kind: 'reference' })),
+            impacted_files: uniq(callers.map((c) => c.filePath)),
+          };
+        }
+        case 'dependencies': {
+          const callees = calleesRaw(ws, q.target, bin);
+          return {
+            locations: callees.map((c) => ({ file: c.filePath, line: c.startLine ?? 0, kind: 'reference' })),
+            impacted_files: uniq(callees.map((c) => c.filePath)),
+          };
+        }
+        case 'callgraph': {
+          const both = [...callersRaw(ws, q.target, bin), ...calleesRaw(ws, q.target, bin)];
+          return {
+            locations: both.map((c) => ({ file: c.filePath, line: c.startLine ?? 0, kind: 'reference' })),
+            impacted_files: uniq(both.map((c) => c.filePath)),
+          };
+        }
+        default:
+          return { locations: [], impacted_files: [] };
+      }
+    },
+  };
+}
