@@ -14,6 +14,10 @@ import { validateDiagnosisReport } from '@gateloop/validator-suite';
 import type { DiagnosisReport } from '@gateloop/validator-suite';
 import { appendNextEvent } from '@gateloop/event-log';
 import type { FailureGene } from '@gateloop/failure-bank';
+import { askModel, composeSystemPrompt, type AskModelDeps, type MountedSkill } from '@gateloop/agent-core';
+import { envelopeDocsForRole } from '@gateloop/agent-core';
+import { loadMountedSkillsForRole } from '@gateloop/skill-runtime';
+import { fileURLToPath } from 'node:url';
 
 export type { DiagnosisReport } from '@gateloop/validator-suite';
 
@@ -211,5 +215,82 @@ export async function runReviewer(
     report: cleanReport,
     valid: validation.ok,
     validationErrors: validation.errors,
+  };
+}
+
+// ── STORY-UST.4 WORK 0: reviewer skill-mount wire (mirrors developer producePatchProposal) ──
+//
+// Until now the Reviewer had no askModel executor callsite (it is strategy-injected),
+// so a registered reviewer skill (e.g. reviewer.ponytail-review) never reached a live
+// reviewer prompt — only the introspection view showed it. This completes the wire the
+// same way the Developer's producePatchProposal does: compose base + mounted reviewer
+// skills (bodies, dependency-ordered) + envelope docs via the SHARED composeSystemPrompt,
+// and send it through askModel. Both the executor and introspection feed body-carrying
+// reviewer skills through the same composeSystemPrompt → isomorphism holds by construction.
+
+/** The Reviewer's base system prompt — its read-only advisory working rules. */
+export function reviewerSystemPromptBase(): string {
+  return [
+    'You are the Reviewer — a read-only advisory leaf. You emit a ranked diagnosis; you never write code, hold a write-set, dispatch agents, or change the story goal or acceptance criteria.',
+    'Working rules:',
+    '1. Read the failing output, the acceptance criteria, the diff, and any matching failure genes — diagnose from the result, not from the author\'s reasoning.',
+    '2. Rank likely causes; audit whether the acceptance tests meaningfully exercise the intent (flag vacuous / over-fit tests, advisory only).',
+    '3. You may recommend, never apply. Recommendations that would remove existing behavior are bounded by the contract and the additive gate.',
+    '4. Stay within scope; surface a structured diagnosis the Supervisor reads and decides on.',
+  ].join('\n');
+}
+
+/** gateloop/ repo root (where skills/skill_manifest.json lives). */
+function defaultReviewerRepoRoot(): string {
+  return fileURLToPath(new URL('../../../', import.meta.url)); // packages/reviewer-runtime/(src|dist) → gateloop/
+}
+
+/** STORY-UST.4: registered reviewer skills as body-carrying mounts (fail-soft → []). */
+export function reviewerMountedSkills(repoRoot: string = defaultReviewerRepoRoot()): MountedSkill[] {
+  try {
+    return loadMountedSkillsForRole('reviewer', repoRoot).map(s => ({
+      name: s.name, summary: s.summary, body: s.body, avoid: s.avoid,
+    }));
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * STORY-UST.4: the reviewer's composed system prompt — base + mounted reviewer skill
+ * bodies + envelope docs, via the SHARED composeSystemPrompt. This is exactly what the
+ * model-backed strategy sends, so asserting on it proves the reviewer skill body reaches
+ * the live prompt; composed by the same function the introspection view uses (isomorphic).
+ */
+export function composeReviewerSystemPrompt(repoRoot?: string): string {
+  return composeSystemPrompt(reviewerSystemPromptBase(), reviewerMountedSkills(repoRoot), envelopeDocsForRole('reviewer'));
+}
+
+/**
+ * STORY-UST.4: a model-backed ReviewStrategy — the reviewer executor wire. It composes
+ * the reviewer prompt WITH mounted skills (so ponytail-review reaches the model) and
+ * sends it through askModel; the returned structured output is handed to runReviewer,
+ * which strips write-set/goal fields and validates it as a DiagnosisReport. Scripted in
+ * CI (deps injected), real later — same interface, like the Developer path.
+ */
+export function makeModelReviewStrategy(
+  deps: AskModelDeps,
+  opts: { repoRoot?: string } = {},
+): ReviewStrategy {
+  return {
+    async review(input: ReviewerInput): Promise<DiagnosisReport> {
+      const mountedSkills = reviewerMountedSkills(opts.repoRoot);
+      const res = await askModel(
+        {
+          role: 'reviewer', taskClass: 'generic', storyId: input.story_id,
+          taskPacket: input as unknown as Record<string, unknown>,
+          prompt: { base: reviewerSystemPromptBase(), mountedSkills },
+        },
+        deps,
+      );
+      // runReviewer enforces the read-only invariants + schema; pass the structured
+      // output through (empty-but-shaped on no output, so the gate stays deterministic).
+      return (res.output ?? {}) as unknown as DiagnosisReport;
+    },
   };
 }

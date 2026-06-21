@@ -306,12 +306,18 @@ importers:
 
   packages/reviewer-runtime:
     dependencies:
+      '@gateloop/agent-core':
+        specifier: workspace:*
+        version: link:../agent-core
       '@gateloop/event-log':
         specifier: workspace:*
         version: link:../event-log
       '@gateloop/failure-bank':
         specifier: workspace:*
         version: link:../failure-bank
+      '@gateloop/skill-runtime':
+        specifier: workspace:*
+        version: link:../skill-runtime
       '@gateloop/validator-suite':
         specifier: workspace:*
         version: link:../validator-suite
