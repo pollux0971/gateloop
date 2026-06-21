@@ -72,3 +72,34 @@ describe('STORY-032.5 skill contents tabs', () => {
     expect(screen.getByText(/contents \(static\)/i)).toBeTruthy();
   });
 });
+
+// ── STORY-GATE.5: cockpit skill controls (toggle / delete non-builtin) ──
+describe('STORY-GATE.5 skill controls', () => {
+  const skills: SkillEntry[] = [
+    { skill_id: 'developer.ponytail-lazy', agent_role: 'developer', description: 'lazy', status: 'registered', enabled: true, builtin: true },
+    { skill_id: 'developer.custom', agent_role: 'developer', description: 'custom', status: 'registered', enabled: true, builtin: false },
+  ];
+
+  it('toggle button emits an un-gated toggle control request', () => {
+    const calls: any[] = [];
+    render(<SkillsPage skills={skills} onSkillControl={(r) => calls.push(r)} />);
+    const toggles = document.querySelectorAll('[data-testid="skill-toggle"]');
+    expect(toggles.length).toBe(2);
+    fireEvent.click(toggles[0]); // ponytail (enabled→disable)
+    expect(calls[0]).toEqual({ op: 'toggle', skill_id: 'developer.ponytail-lazy', enabled: false });
+  });
+
+  it('delete button shown for non-builtin only; builtin shows a builtin badge and no delete', () => {
+    render(<SkillsPage skills={skills} onSkillControl={() => {}} />);
+    const deletes = document.querySelectorAll('[data-testid="skill-delete"]');
+    expect(deletes.length).toBe(1); // only the non-builtin custom skill
+    expect(document.querySelectorAll('[data-testid="builtin-badge"]').length).toBe(1);
+  });
+
+  it('delete emits a delete control request for the non-builtin skill', () => {
+    const calls: any[] = [];
+    render(<SkillsPage skills={skills} onSkillControl={(r) => calls.push(r)} />);
+    fireEvent.click(document.querySelector('[data-testid="skill-delete"]')!);
+    expect(calls[0]).toEqual({ op: 'delete', skill_id: 'developer.custom' });
+  });
+});

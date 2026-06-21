@@ -123,6 +123,9 @@ importers:
 
   apps/api:
     dependencies:
+      '@gateloop/skill-runtime':
+        specifier: workspace:*
+        version: link:../../packages/skill-runtime
       fastify:
         specifier: latest
         version: 5.8.5

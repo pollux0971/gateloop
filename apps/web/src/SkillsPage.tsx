@@ -29,7 +29,13 @@ export interface SkillEntry {
   quarantine_reason?: string;
   /** STORY-032.5: full contents (metadata + SKILL.md + scripts) from GET /skills/{id}. */
   detail?: SkillDetail;
+  /** STORY-GATE.4/5: user on/off toggle (default true) + shipped-by-default builtin. */
+  enabled?: boolean;
+  builtin?: boolean;
 }
+
+/** STORY-GATE.5: a cockpit skill-control request — the server enforces the §4d boundary. */
+export interface SkillControlRequest { op: 'toggle' | 'delete'; skill_id: string; enabled?: boolean }
 
 export interface ToolAllowlistEntry {
   role: string;
@@ -39,6 +45,20 @@ export interface ToolAllowlistEntry {
 export interface SkillsPageProps {
   skills: SkillEntry[];
   toolAllowlist?: ToolAllowlistEntry[];
+  /** STORY-GATE.5: skill-control callback (toggle/delete). Injected for tests; defaults to
+   *  a fetch to the server, which enforces the §4d boundary — the UI is NOT the enforcer. */
+  onSkillControl?: (req: SkillControlRequest) => void;
+}
+
+/** Default control: hit the server endpoints. The SERVER (not this fetch) enforces §4d. */
+function defaultSkillControl(req: SkillControlRequest): void {
+  if (req.op === 'toggle') {
+    void fetch(`/api/skills/${encodeURIComponent(req.skill_id)}/enabled`, {
+      method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ enabled: req.enabled }),
+    });
+  } else {
+    void fetch(`/api/skills/${encodeURIComponent(req.skill_id)}`, { method: 'DELETE' });
+  }
 }
 
 const STATUS_COLOR: Record<SkillEntry['status'], string> = {
@@ -80,13 +100,15 @@ function SkillContents({ detail }: { detail: SkillDetail }): JSX.Element {
   );
 }
 
-function SkillCard({ skill }: { skill: SkillEntry }): JSX.Element {
+function SkillCard({ skill, onControl }: { skill: SkillEntry; onControl: (req: SkillControlRequest) => void }): JSX.Element {
   const [avoidOpen, setAvoidOpen] = useState(false);
   const [contentsOpen, setContentsOpen] = useState(false);
   // Show only the suffix after the role prefix to avoid duplicate text matches with role group headers.
   const displayName = skill.skill_id.startsWith(`${skill.agent_role}.`)
     ? skill.skill_id.slice(skill.agent_role.length + 1)
     : skill.skill_id;
+  const enabled = skill.enabled !== false; // default true
+  const ctrlBtn: CSSProperties = { ...mono, fontSize: 10, background: 'none', border: '1px solid rgba(230,237,243,.2)', borderRadius: 4, color: '#E6EDF3', cursor: 'pointer', padding: '1px 6px' };
 
   return (
     <div data-skillid={skill.skill_id} style={{ ...card, marginBottom: 8 }}>
@@ -102,9 +124,29 @@ function SkillCard({ skill }: { skill: SkillEntry }): JSX.Element {
         }}>
           {skill.status}
         </span>
+        {skill.builtin && <span style={{ ...mono, fontSize: 10, ...dim }} data-testid="builtin-badge">builtin</span>}
         {skill.test_count !== undefined && (
           <span style={{ ...mono, fontSize: 10, ...dim }}>tests: {skill.test_count}</span>
         )}
+        {/* STORY-GATE.5: user controls — toggle (un-gated); delete only for non-builtin. */}
+        <span style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
+          <button
+            data-testid="skill-toggle"
+            onClick={() => onControl({ op: 'toggle', skill_id: skill.skill_id, enabled: !enabled })}
+            style={ctrlBtn}
+          >
+            {enabled ? 'disable' : 'enable'}
+          </button>
+          {!skill.builtin && (
+            <button
+              data-testid="skill-delete"
+              onClick={() => onControl({ op: 'delete', skill_id: skill.skill_id })}
+              style={{ ...ctrlBtn, color: '#E57373' }}
+            >
+              delete
+            </button>
+          )}
+        </span>
       </div>
 
       <div style={{ fontSize: 12, marginBottom: 4 }}>{skill.description}</div>
@@ -149,7 +191,7 @@ function SkillCard({ skill }: { skill: SkillEntry }): JSX.Element {
   );
 }
 
-function RoleGroup({ role, skills }: { role: string; skills: SkillEntry[] }): JSX.Element {
+function RoleGroup({ role, skills, onControl }: { role: string; skills: SkillEntry[]; onControl: (req: SkillControlRequest) => void }): JSX.Element {
   const [open, setOpen] = useState(true);
 
   return (
@@ -162,7 +204,7 @@ function RoleGroup({ role, skills }: { role: string; skills: SkillEntry[] }): JS
         <span>{role}</span>
         <span style={{ ...mono, fontSize: 10, ...dim }}>({skills.length})</span>
       </button>
-      {open && skills.map(s => <SkillCard key={s.skill_id} skill={s} />)}
+      {open && skills.map(s => <SkillCard key={s.skill_id} skill={s} onControl={onControl} />)}
     </div>
   );
 }
@@ -198,7 +240,8 @@ function ToolAllowlistSection({ allowlist }: { allowlist: ToolAllowlistEntry[] }
   );
 }
 
-export function SkillsPage({ skills, toolAllowlist }: SkillsPageProps): JSX.Element {
+export function SkillsPage({ skills, toolAllowlist, onSkillControl }: SkillsPageProps): JSX.Element {
+  const onControl = onSkillControl ?? defaultSkillControl;
   const groups = new Map<string, SkillEntry[]>();
   for (const skill of skills) {
     if (!groups.has(skill.agent_role)) groups.set(skill.agent_role, []);
@@ -212,7 +255,7 @@ export function SkillsPage({ skills, toolAllowlist }: SkillsPageProps): JSX.Elem
       </div>
 
       {Array.from(groups.entries()).map(([role, roleSkills]) => (
-        <RoleGroup key={role} role={role} skills={roleSkills} />
+        <RoleGroup key={role} role={role} skills={roleSkills} onControl={onControl} />
       ))}
 
       {toolAllowlist && toolAllowlist.length > 0 && (

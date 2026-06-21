@@ -4,6 +4,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readModels, readRouting, routingRows, applyRoutingUpdate, readRouterConfig, applyRouterConfig } from './registry';
 import { loadProviderModeTrace } from './providerModeTrace';
+import { handleSkillControl, type SkillCatalog } from './skillControl';
+import type { SkillControlRequest } from '@gateloop/skill-runtime';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(__dirname, '../../..');            // gateloop/
@@ -35,6 +37,29 @@ app.get('/api/skills/:id', async (req: any, reply) => {
   const s = loadSkills().find((x: any) => x.skill_id === req.params.id);
   return s ?? reply.code(404).send({ error: 'skill not found' });
 });
+
+// ── STORY-GATE.5: cockpit skill CONTROL (toggle / add-through-gate / delete non-builtin) ──
+// §4d boundary is server-enforced via handleSkillControl → decideSkillControl. The frontend
+// can carry user skill DECISIONS but never reach a guardrail; the server refuses overreach
+// regardless of what the UI sends. The catalog is the only thing these endpoints can mutate.
+const MANIFEST_REL = 'skills/skill_manifest.json';
+const skillCatalogIO = {
+  read: () => read(MANIFEST_REL) as SkillCatalog,
+  write: (c: SkillCatalog) => fs.writeFileSync(path.join(REPO, MANIFEST_REL), JSON.stringify(c, null, 2) + '\n'),
+};
+function runSkillControl(req: SkillControlRequest, reply: any) {
+  const r = handleSkillControl(req, skillCatalogIO);
+  return reply.code(r.code).send(r.body);
+}
+app.put('/api/skills/:id/enabled', async (req: any, reply) =>
+  runSkillControl({ op: 'toggle', skill_id: req.params.id, enabled: (req.body ?? {}).enabled }, reply));
+app.post('/api/skills', async (req: any, reply) =>
+  runSkillControl({ op: 'add', manifest: (req.body ?? {}).manifest }, reply));
+app.delete('/api/skills/:id', async (req: any, reply) =>
+  runSkillControl({ op: 'delete', skill_id: req.params.id }, reply));
+// Generic skill-control endpoint — the §4d boundary refuses any overreaching op/field here too.
+app.post('/api/skill-control', async (req: any, reply) =>
+  runSkillControl((req.body ?? {}) as SkillControlRequest, reply));
 
 // ── Platform: agents, packages, state machine, plugins, summary ───────────────
 const AGENTS = [

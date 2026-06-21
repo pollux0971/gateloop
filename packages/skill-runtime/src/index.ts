@@ -269,3 +269,71 @@ export function canRegisterSkill(m: FullSkillManifest): SkillMutationResult {
   }
   return { ok: true };
 }
+
+// ── STORY-GATE.5: §4d cockpit skill-control boundary (SERVER-enforced, not UI politeness) ──
+//
+// The cockpit may carry the user's skill DECISIONS (toggle / add-through-gate /
+// delete-non-builtin) but can NEVER reach a guardrail. This decision function is the
+// server-side enforcement: the API calls it and obeys it regardless of what the UI sent.
+// It refuses (a) any request that names a guardrail/policy/real_api field, (b) any op
+// outside the safe set (e.g. "register", "enable_real_api", "weaken_writeset", "promote"),
+// (c) an add that hasn't got tests (the lifecycle test-gate must not be bypassed), and
+// (d) deleting a builtin. GATE.6 adversarially proves these refusals actually fire.
+
+export type SkillControlOp = 'toggle' | 'add' | 'delete';
+const SAFE_SKILL_OPS = new Set<string>(['toggle', 'add', 'delete']);
+/** Fields that mean the request is trying to reach BEYOND skill management → refuse. */
+const OVERREACH_FIELD =
+  /policy|real_api|kill_switch|write[._-]?set|allowed_tools|default[._-]?deny|isolation|network|egress|sandbox|container|profile|promote|promotion|guardrail|bypass|sudo|secret|confinement/i;
+
+export interface SkillControlRequest {
+  op: string;
+  skill_id?: string;
+  enabled?: boolean;
+  manifest?: FullSkillManifest;
+  [k: string]: unknown;
+}
+export interface SkillControlDecision { allow: boolean; op?: SkillControlOp; reason: string }
+
+/**
+ * STORY-GATE.5: decide whether a cockpit skill-control request is permitted. Pure +
+ * deterministic; the server's single source of truth for the §4d boundary.
+ */
+export function decideSkillControl(
+  req: SkillControlRequest,
+  ctx: { findSkill: (id: string) => { builtin?: boolean } | undefined },
+): SkillControlDecision {
+  // (a) refuse any request that names a guardrail/policy/real_api field — regardless of UI.
+  for (const k of Object.keys(req)) {
+    if (k === 'op' || k === 'skill_id' || k === 'enabled' || k === 'manifest') continue;
+    if (OVERREACH_FIELD.test(k)) {
+      return { allow: false, reason: `server boundary: skill control cannot touch '${k}' (guardrail/policy/real_api/promotion)` };
+    }
+  }
+  // (b) only the safe ops; anything else (register/enable_real_api/weaken_*/promote/...) is refused.
+  if (!SAFE_SKILL_OPS.has(req.op)) {
+    return { allow: false, reason: `server boundary: op '${req.op}' is not a permitted skill-control operation` };
+  }
+  if (req.op === 'toggle') {
+    if (typeof req.enabled !== 'boolean') return { allow: false, reason: 'toggle requires enabled:boolean' };
+    return { allow: true, op: 'toggle', reason: 'toggle is a user decision (un-gated)' };
+  }
+  if (req.op === 'add') {
+    if (!req.manifest) return { allow: false, reason: 'add requires a manifest' };
+    // (c) the add must go through the lifecycle test-gate — never let the frontend
+    //     register a skill without tests (the structural precondition; the API then runs
+    //     the full skill-tester gate before status can become 'registered').
+    const gate = canRegisterSkill(req.manifest);
+    if (!gate.ok) return { allow: false, reason: `add refused (test-gate): ${gate.error}` };
+    if (req.manifest.status === 'registered') {
+      return { allow: false, reason: 'add cannot self-register; it must pass the lifecycle test-gate (status starts needs_tests)' };
+    }
+    return { allow: true, op: 'add', reason: 'add routed through the lifecycle test-gate' };
+  }
+  // (d) delete — refuse builtin (disable instead).
+  const sk = req.skill_id ? ctx.findSkill(req.skill_id) : undefined;
+  const del = canDeleteSkill({ builtin: sk?.builtin, skill_id: req.skill_id });
+  return del.ok
+    ? { allow: true, op: 'delete', reason: 'delete of a non-builtin skill (user decision)' }
+    : { allow: false, reason: del.error ?? 'delete refused' };
+}
