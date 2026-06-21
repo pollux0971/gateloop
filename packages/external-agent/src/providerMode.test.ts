@@ -43,12 +43,12 @@ describe('STORY-035.2: provider_mode producer flows through the INHERITED exit g
     const produced = await producer.produce(PACKET, SANDBOX);
     expect(produced.diff).toBe(IN_SET_DIFF);
     expect(produced.events).toHaveLength(3);
-    expect(producer.mode).toBe('cli_mode'); // rides the existing lane until 035.7 renames it
+    expect(producer.mode).toBe('provider_mode'); // its own lane (renamed from cli_mode in TIER C)
   });
 
   it('an in-write-set diff is ACCEPTED by the unchanged exit gate', async () => {
     const res = await runBuilderMode({
-      mode: 'cli_mode',
+      mode: 'provider_mode',
       producer: providerModeProducer(fakeRunner(EVENTS), () => IN_SET_DIFF),
       packet: PACKET,
       sandbox: SANDBOX,
@@ -61,7 +61,7 @@ describe('STORY-035.2: provider_mode producer flows through the INHERITED exit g
 
   it('an out-of-write-set diff is REJECT_WHOLE (the crux still bites, unchanged)', async () => {
     const res = await runBuilderMode({
-      mode: 'cli_mode',
+      mode: 'provider_mode',
       producer: providerModeProducer(fakeRunner(EVENTS), () => OUT_OF_SET_DIFF),
       packet: PACKET,
       sandbox: SANDBOX,

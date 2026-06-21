@@ -1,7 +1,8 @@
-# Builder execution mode (EPIC-034 / STORY-034.2).
+# Builder execution mode (EPIC-034 / STORY-034.2; cli_mode → provider_mode renamed in EPIC-035 TIER C).
 #   agent_mode (default, fail-safe): API model acting only through the ACI tool interface.
-#   cli_mode: delegate the story to an external CLI agent (Claude Code) in a controlled,
-#             isolated bash sandbox, routed through EPIC-033's ExternalAgentDriver.
-# cli_mode is opt-in and gated (real-CLI spend is behind STORY-034.5 + the human barrier).
-# Anything other than an explicit "cli_mode" resolves to agent_mode (selectBuilderMode).
+#   provider_mode: delegate the story to an in-process ProviderDriver (Vercel-AI-SDK-backed,
+#             isolated behind @gateloop/provider-driver) working through the confined tool layer.
+# provider_mode is opt-in and gated (real metered/subscription spend is behind real_api_calls +
+# the human barrier). Anything other than an explicit "provider_mode" resolves to agent_mode
+# (selectBuilderMode). The legacy spawn-CLI lane this replaced was retired in EPIC-035 (TIER A/B).
 default_mode: agent_mode

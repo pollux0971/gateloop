@@ -4,7 +4,7 @@ import {
   selectBuilderMode,
   DEFAULT_BUILDER_MODE,
   agentModeProducer,
-  cliModeProducer,
+  providerModeProducer,
   runBuilderMode,
   toDelegationResult,
   type ProducedDiff,
@@ -34,7 +34,8 @@ const OUT_OF_SET_DIFF = [
   '+leak',
 ].join('\n');
 
-/** A scripted/stub ExternalAgentDriver (033 interface) — yields events, spawns nothing. */
+/** A scripted/stub driver (the 033 ExternalAgentDriver seam — structurally a ProviderRunnerLike).
+ *  Yields events, spawns nothing. */
 function stubDriver(events: AgentEvent[]): ExternalAgentDriver {
   return {
     driver: 'headless',
@@ -49,23 +50,23 @@ const STUB_EVENTS: AgentEvent[] = [
   { cli: 'claude', kind: 'completion', summary: 'done', stop_reason: 'end_turn', tokens: { input: 10, output: 20 } },
 ];
 
-// ── Behavior: builder_mode_selectable_agent_or_cli_default_agent ──────────────────
+// ── Behavior: builder_mode_selectable_agent_or_provider_default_agent ─────────────
 describe('builder mode selection', () => {
-  it('builder_mode_selectable_agent_or_cli_default_agent', () => {
+  it('builder_mode_selectable_agent_or_provider_default_agent', () => {
     expect(DEFAULT_BUILDER_MODE).toBe('agent_mode');
     expect(selectBuilderMode()).toBe('agent_mode');               // nothing → default
     expect(selectBuilderMode({})).toBe('agent_mode');             // empty → default
-    expect(selectBuilderMode({ mode: 'cli_mode' })).toBe('cli_mode');
+    expect(selectBuilderMode({ mode: 'provider_mode' })).toBe('provider_mode');
     expect(selectBuilderMode({ mode: 'agent_mode' })).toBe('agent_mode');
     expect(selectBuilderMode({ mode: 'nonsense' })).toBe('agent_mode'); // garbage fails SAFE
   });
 });
 
-// ── Behavior: cli_mode_routes_to_external_agent_driver_033_reused ─────────────────
-describe('cli mode routing to 033 driver', () => {
-  it('cli_mode_routes_to_external_agent_driver_033_reused', async () => {
-    const producer = cliModeProducer('claude', stubDriver(STUB_EVENTS), () => IN_SET_DIFF);
-    expect(producer.mode).toBe('cli_mode');
+// ── Behavior: provider_mode_produces_diff_from_driver_stream ──────────────────────
+describe('provider mode routing through the driver stream', () => {
+  it('provider_mode_produces_diff_from_driver_stream', async () => {
+    const producer = providerModeProducer(stubDriver(STUB_EVENTS), () => IN_SET_DIFF, 'claude');
+    expect(producer.mode).toBe('provider_mode');
     const produced = await producer.produce(PACKET, SANDBOX);
     expect(produced.cli).toBe('claude');
     expect(produced.events).toHaveLength(2);               // consumed the driver's stream
@@ -78,10 +79,10 @@ describe('cli mode routing to 033 driver', () => {
 describe('both modes share the exit gate + result contract', () => {
   it('both_modes_emit_diff_through_same_exit_gate_and_result_contract', async () => {
     const agent = agentModeProducer(async (): Promise<ProducedDiff> => ({ diff: IN_SET_DIFF, events: [] }));
-    const cli = cliModeProducer('claude', stubDriver(STUB_EVENTS), () => IN_SET_DIFF);
+    const provider = providerModeProducer(stubDriver(STUB_EVENTS), () => IN_SET_DIFF, 'claude');
 
     const a = await runBuilderMode({ mode: 'agent_mode', producer: agent, packet: PACKET, sandbox: SANDBOX, contract: CONTRACT });
-    const c = await runBuilderMode({ mode: 'cli_mode', producer: cli, packet: PACKET, sandbox: SANDBOX, contract: CONTRACT });
+    const c = await runBuilderMode({ mode: 'provider_mode', producer: provider, packet: PACKET, sandbox: SANDBOX, contract: CONTRACT });
 
     // Same exit gate → same verdict for the same in-write-set diff.
     expect(a.verdict.accepted).toBe(true);
@@ -97,8 +98,8 @@ describe('both modes share the exit gate + result contract', () => {
   });
 
   it('shared exit gate rejects out-of-write-set in EITHER mode (whole-proposal reject → escalate)', async () => {
-    const cli = cliModeProducer('claude', stubDriver(STUB_EVENTS), () => OUT_OF_SET_DIFF);
-    const c = await runBuilderMode({ mode: 'cli_mode', producer: cli, packet: PACKET, sandbox: SANDBOX, contract: CONTRACT });
+    const provider = providerModeProducer(stubDriver(STUB_EVENTS), () => OUT_OF_SET_DIFF, 'claude');
+    const c = await runBuilderMode({ mode: 'provider_mode', producer: provider, packet: PACKET, sandbox: SANDBOX, contract: CONTRACT });
     expect(c.verdict.accepted).toBe(false);
     expect(c.verdict.rejected_whole).toBe(true);
     expect(c.verdict.out_of_write_set).toContain('secret.txt');
@@ -113,7 +114,7 @@ describe('agent mode is additive', () => {
     expect(agent.mode).toBe('agent_mode');
     const produced = await agent.produce(PACKET, SANDBOX);
     // agent_mode is not a CLI: no CLI label, no self-report — nothing about the existing
-    // API+ACI path changed; cli_mode is layered alongside it.
+    // API+ACI path changed; provider_mode is layered alongside it.
     expect(produced.cli).toBeUndefined();
     const result = toDelegationResult('agent_mode', produced);
     expect(result.self_report_source).toBe('none');
@@ -125,10 +126,10 @@ describe('agent mode is additive', () => {
 describe('mode recorded in trace', () => {
   it('mode_recorded_in_trace', async () => {
     const agent = agentModeProducer(async (): Promise<ProducedDiff> => ({ diff: IN_SET_DIFF, events: [] }));
-    const cli = cliModeProducer('claude', stubDriver(STUB_EVENTS), () => IN_SET_DIFF);
+    const provider = providerModeProducer(stubDriver(STUB_EVENTS), () => IN_SET_DIFF, 'claude');
 
     const a = await runBuilderMode({ mode: 'agent_mode', producer: agent, packet: PACKET, sandbox: SANDBOX, contract: CONTRACT });
-    const c = await runBuilderMode({ mode: 'cli_mode', producer: cli, packet: PACKET, sandbox: SANDBOX, contract: CONTRACT });
+    const c = await runBuilderMode({ mode: 'provider_mode', producer: provider, packet: PACKET, sandbox: SANDBOX, contract: CONTRACT });
 
     expect(a.trace.type).toBe('builder_mode');
     expect(a.trace.mode).toBe('agent_mode');
@@ -137,7 +138,7 @@ describe('mode recorded in trace', () => {
     expect(a.trace.accepted).toBe(true);
 
     expect(c.trace.type).toBe('builder_mode');
-    expect(c.trace.mode).toBe('cli_mode');
+    expect(c.trace.mode).toBe('provider_mode');
     expect(c.trace.cli).toBe('claude');
     expect(c.trace.action).toBe('write_checkpoint');
   });

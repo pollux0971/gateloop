@@ -8,7 +8,7 @@ import { IdeaIntake } from './IdeaIntake';
 import { HealthDashboard, type BudgetSnapshot, type GateConfig, type GateAuditEntry } from './HealthDashboard';
 import { ProjectPreview, type ProjectFile, type FileDiff, type PromotionHistoryEntry } from './ProjectPreview';
 import { ApiPage } from './ApiPage';
-import { CliModeMonitor } from './CliModeMonitor';
+import { ProviderModeMonitor } from './ProviderModeMonitor';
 import { MOCK_TRACE_EVENTS } from './mockTrace';
 
 const API = (import.meta as any).env?.VITE_API ?? 'http://127.0.0.1:8787';
@@ -49,7 +49,7 @@ const j = (p: string) => fetch(API + p).then(r => r.json());
 export function App() {
   const [d, setD] = useState<any>(null);
   const [err, setErr] = useState<string>('');
-  const [tab, setTab] = useState<'cockpit' | 'models' | 'cli-mode'>('cockpit');
+  const [tab, setTab] = useState<'cockpit' | 'models' | 'provider-mode'>('cockpit');
   // Live model registry + agent→model routing (UI WORK 2) — fetched from /api/models.
   const [registry, setRegistry] = useState<{ models: any[]; routing: { agent: string; model: string }[] } | null>(null);
   const [routerCfg, setRouterCfg] = useState<{ enabled: boolean; mode: 'save-money' | 'balanced' | 'reliable' }>({ enabled: false, mode: 'balanced' });
@@ -97,18 +97,18 @@ export function App() {
         </div>
         {d?.stateMachine && <LifecycleRail states={d.stateMachine} />}
         <nav style={{ display: 'flex', gap: 8, marginTop: 10 }} data-testid="cockpit-nav">
-          {(['cockpit', 'models', 'cli-mode'] as const).map(t => (
+          {(['cockpit', 'models', 'provider-mode'] as const).map(t => (
             <button key={t} onClick={() => setTab(t)} data-testid={`nav-${t}`}
               style={{ ...mono, fontSize: 12, padding: '4px 12px', borderRadius: 6, cursor: 'pointer',
                 background: tab === t ? '#18242F' : 'transparent', color: tab === t ? '#5BD6C0' : 'rgba(230,237,243,.56)',
                 border: '1px solid rgba(230,237,243,.1)' }}>
-              {t === 'cockpit' ? 'Cockpit' : t === 'models' ? 'Models & Routing' : 'CLI-mode Monitor'}
+              {t === 'cockpit' ? 'Cockpit' : t === 'models' ? 'Models & Routing' : 'Provider-mode Monitor'}
             </button>
           ))}
         </nav>
       </header>
-      {tab === 'cli-mode' ? (
-        <CliModeMonitor apiBase={API} />
+      {tab === 'provider-mode' ? (
+        <ProviderModeMonitor apiBase={API} />
       ) : tab === 'models' ? (
         <ApiPage
           router={{ enabled: routerCfg.enabled, mode: routerCfg.mode, onChange: onRouterChange }}

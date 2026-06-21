@@ -1,25 +1,27 @@
 /**
- * @gateloop/external-agent — Builder execution-mode abstraction (EPIC-034 / STORY-034.2).
+ * @gateloop/external-agent — Builder execution-mode abstraction (EPIC-034 / STORY-034.2,
+ * cli_mode → provider_mode renamed in EPIC-035 TIER C).
  *
  * Two interchangeable builder modes behind ONE exit gate + ONE result contract:
  *   - agent_mode (shipped): an API model acting only through the ACI tool interface;
- *   - cli_mode (new): an external CLI agent (Claude Code) routed through EPIC-033's
- *     ExternalAgentDriver / HeadlessDriver.
+ *   - provider_mode (EPIC-035): an in-process ProviderDriver (Vercel-AI-SDK-backed, isolated
+ *     behind @gateloop/provider-driver) working a story through the confined tool layer.
+ *
+ * (Historically this second lane was `cli_mode` — an external CLI agent spawned via EPIC-033's
+ * HeadlessDriver. That spawn path was retired in EPIC-035 (TIER A/B) and replaced by the
+ * in-process provider; the lane is renamed provider_mode to match. See ADR-019 §4.3 / ADR-020.)
  *
  * The design principle (docs/architecture/18_DUAL_MODE_BUILDER.md): a mode is just a
  * DiffProducer. Whatever produces the diff, the diff is an UNTRUSTED artifact that flows
  * through the SAME shared path — buildDelegationResult/adapt → runExitGate (033) →
  * decideDelegationOutcome (harness-core). Nothing trust-bearing is per-mode; only the
- * producer differs. Default is agent_mode (fail-safe). This story is the abstraction only:
- * cli_mode routes to 033's driver; the deepened controlled-bash bridge is 034.3; no real
- * CLI is spawned here (a real driver would only be supplied behind the 034.5 gate).
+ * producer differs. Default is agent_mode (fail-safe).
  */
 import {
   type AgentEvent,
   type CliKind,
   type DelegationTaskPacket,
   type SandboxHandle,
-  type ExternalAgentDriver,
   type DelegationResult,
   type ExitGateContract,
   type ExitGateGates,
@@ -36,22 +38,22 @@ import { decideDelegationOutcome, type DelegationOutcomeDecision } from '@gatelo
 
 // ── Mode selection ───────────────────────────────────────────────────────────────
 
-export type BuilderMode = 'agent_mode' | 'cli_mode';
+export type BuilderMode = 'agent_mode' | 'provider_mode';
 
-/** Fail-safe default: when nothing explicitly asks for cli_mode, the builder runs as the
- *  proven agent_mode. cli_mode is the higher-capability/higher-risk path and is opt-in. */
+/** Fail-safe default: when nothing explicitly asks for provider_mode, the builder runs as the
+ *  proven agent_mode. provider_mode is the higher-capability/higher-risk path and is opt-in. */
 export const DEFAULT_BUILDER_MODE: BuilderMode = 'agent_mode';
 
 export interface BuilderModeConfig {
-  /** Per-story/config selector. Only an explicit, valid 'cli_mode' switches modes. */
+  /** Per-story/config selector. Only an explicit, valid 'provider_mode' switches modes. */
   mode?: BuilderMode | string;
 }
 
-/** Resolve the builder mode. Anything other than an explicit valid 'cli_mode'
+/** Resolve the builder mode. Anything other than an explicit valid 'provider_mode'
  *  (undefined, garbage, 'agent_mode') resolves to agent_mode — never fail OPEN into the
  *  high-capability mode by accident. */
 export function selectBuilderMode(cfg?: BuilderModeConfig): BuilderMode {
-  return cfg?.mode === 'cli_mode' ? 'cli_mode' : DEFAULT_BUILDER_MODE;
+  return cfg?.mode === 'provider_mode' ? 'provider_mode' : DEFAULT_BUILDER_MODE;
 }
 
 // ── The producer abstraction (the only per-mode part) ─────────────────────────────
@@ -61,13 +63,13 @@ export function selectBuilderMode(cfg?: BuilderModeConfig): BuilderMode {
 export interface ProducedDiff {
   /** AUTHORITATIVE git diff vs the pre-delegation tree. */
   diff: string;
-  /** The mode's AgentEvent stream (cli_mode: driver output; agent_mode: optional). */
+  /** The mode's AgentEvent stream (provider_mode: driver output; agent_mode: optional). */
   events: AgentEvent[];
-  /** Raw self-report payload (cli_mode only; advisory). */
+  /** Raw self-report payload (provider_mode only; advisory). */
   self_report_raw?: unknown;
   killed?: boolean;
   kill_reason?: 'wall_clock' | 'budget';
-  /** Which CLI produced the diff (cli_mode); undefined for agent_mode (not a CLI). */
+  /** Which model backend produced the diff (provider_mode); undefined for agent_mode. */
   cli?: CliKind;
 }
 
@@ -89,36 +91,14 @@ export function agentModeProducer(
 }
 
 /**
- * cli_mode producer — routes to a 033 ExternalAgentDriver (HeadlessDriver), consuming its
- * AgentEvent stream and deriving the authoritative diff via the injected getDiff (which, in
- * 034.3+, reads `git diff` from the sandbox after the run). No real CLI is spawned unless a
- * real driver is supplied — tests pass a scripted/stub driver, so this is CI-safe.
- */
-export function cliModeProducer(
-  cli: CliKind,
-  driver: ExternalAgentDriver,
-  getDiff: (events: AgentEvent[]) => string | Promise<string>,
-): DiffProducer {
-  return {
-    mode: 'cli_mode',
-    async produce(packet, sandbox) {
-      const events: AgentEvent[] = [];
-      for await (const ev of driver.run(packet, sandbox)) events.push(ev);
-      const diff = await getDiff(events);
-      return { diff, events, cli };
-    },
-  };
-}
-
-/**
  * provider_mode producer (EPIC-035 / STORY-035.2) — routes to an in-process ProviderDriver
- * (Vercel-AI-SDK-backed, isolated behind its own package) instead of a spawned CLI. Structurally
- * identical to cliModeProducer: it consumes the driver's AgentEvent stream and derives the
- * AUTHORITATIVE diff via the injected getDiff (git diff from the sandbox). Accepts any object with
- * a `run()` of the driver shape, so external-agent need not depend on @gateloop/provider-driver
- * (no cycle). Rides the existing cli_mode lane through the shared exit gate until 035.7 renames it
- * to provider_mode. No real provider is contacted here — the engine inside the driver decides that
- * (scripted in tests; gated real run is 035.5).
+ * (Vercel-AI-SDK-backed, isolated behind its own package) working a story through the confined
+ * tool layer. It consumes the driver's AgentEvent stream and derives the AUTHORITATIVE diff via
+ * the injected getDiff (git diff from the sandbox). Accepts any object with a `run()` of the
+ * driver shape (`ProviderRunnerLike`), so external-agent need not depend on
+ * @gateloop/provider-driver (no cycle) — and the EPIC-033 `ExternalAgentDriver` seam shape also
+ * satisfies it. No real provider is contacted here — the engine inside the driver decides that
+ * (scripted in tests; gated real runs are 035.5 + EPIC-035 (b)).
  */
 export interface ProviderRunnerLike {
   run(packet: DelegationTaskPacket, sandbox: SandboxHandle): AsyncIterable<AgentEvent>;
@@ -130,7 +110,7 @@ export function providerModeProducer(
   cli: CliKind = 'codex',
 ): DiffProducer {
   return {
-    mode: 'cli_mode',
+    mode: 'provider_mode',
     async produce(packet, sandbox) {
       const events: AgentEvent[] = [];
       for await (const ev of runner.run(packet, sandbox)) events.push(ev);
@@ -144,15 +124,15 @@ export function providerModeProducer(
 
 /**
  * Adapt a produced diff into the SHARED DelegationResult the exit gate consumes.
- * - cli_mode uses 033's buildDelegationResult (full per-CLI native-vs-validated self-report
- *   policy + lie detection).
+ * - provider_mode uses 033's buildDelegationResult (full per-backend native-vs-validated
+ *   self-report policy + lie detection).
  * - agent_mode is NOT a CLI and carries no self-report, so it is adapted directly. The exit
  *   gate consumes only the AUTHORITATIVE diff (+ advisory warnings) and EXCLUDES every
  *   self-report regardless of mode, so the (unused) cli field is left undefined rather than
  *   mislabeled as a real CLI.
  */
 export function toDelegationResult(mode: BuilderMode, produced: ProducedDiff): DelegationResult {
-  if (mode === 'cli_mode') {
+  if (mode === 'provider_mode') {
     return buildDelegationResult({
       cli: produced.cli ?? 'claude',
       diff: produced.diff,
@@ -181,7 +161,7 @@ export interface BuilderModeTraceEvent {
   type: 'builder_mode';
   mode: BuilderMode;
   story_id: string;
-  /** Present in cli_mode (which CLI ran); absent in agent_mode. */
+  /** Present in provider_mode (which model backend ran); absent in agent_mode. */
   cli?: CliKind;
   accepted: boolean;
   action: DelegationOutcomeDecision['action'];
