@@ -8,8 +8,10 @@
  * write-set is rejected before it ever leaves the agent.
  * Spec: gateloop/docs/agents/03_DEVELOPER_AGENT.md
  */
-import { askModel, type AskModelDeps } from '@gateloop/agent-core';
+import { askModel, type AskModelDeps, type MountedSkill } from '@gateloop/agent-core';
+import { loadMountedSkillsForRole } from '@gateloop/skill-runtime';
 import type { AgentStructuredOutput } from '@gateloop/model-gateway';
+import { fileURLToPath } from 'node:url';
 
 export interface ValidationResult { ok: boolean; errors: string[] }
 
@@ -206,6 +208,39 @@ export interface ProducePatchProposalOptions {
   proposedAt?: string;
   /** Patch branch; defaults to story/<story_id>. Never the main branch. */
   patchBranch?: string;
+  /**
+   * STORY-UST.1: explicit mounted skills (with SKILL.md body) to inject into the
+   * Developer's system prompt. When omitted, the registered developer skills are
+   * loaded from `skillsRoot` (or the repo skills dir) — so a registered skill's
+   * procedure actually reaches the model, not just a name bullet. Pass `[]` to mount
+   * nothing (deterministic tests).
+   */
+  mountedSkills?: MountedSkill[];
+  /** STORY-UST.1: repo root holding skills/skill_manifest.json; defaults to gateloop/. */
+  skillsRoot?: string;
+}
+
+/** STORY-UST.1: the gateloop/ repo root, where skills/skill_manifest.json lives. */
+function defaultSkillsRepoRoot(): string {
+  return fileURLToPath(new URL('../../../', import.meta.url)); // packages/developer-runtime/(src|dist) → gateloop/
+}
+
+/**
+ * STORY-UST.1: resolve the developer skills to mount, body included. Explicit
+ * `mountedSkills` win; otherwise load registered developer skills (dependency-ordered,
+ * frontmatter-stripped) from the catalog. Fail-soft: any read error → no skills mounted,
+ * never a thrown error (a missing catalog must not break patch generation).
+ */
+function resolveDeveloperMountedSkills(options: ProducePatchProposalOptions): MountedSkill[] {
+  if (options.mountedSkills) return options.mountedSkills;
+  try {
+    const root = options.skillsRoot ?? defaultSkillsRepoRoot();
+    return loadMountedSkillsForRole('developer', root).map(s => ({
+      name: s.name, summary: s.summary, body: s.body, avoid: s.avoid,
+    }));
+  } catch {
+    return [];
+  }
 }
 
 export interface ProducePatchProposalResult {
@@ -246,10 +281,14 @@ export async function producePatchProposal(
   //    §1c: send the Developer's working rules as a composed system prompt — previously
   //    this call passed NO prompt, so the rules in 03_DEVELOPER_AGENT.md never reached
   //    the model. composeSystemPrompt (via askModel) now folds them in on every turn.
+  // STORY-UST.1: mount registered developer skills WITH their SKILL.md body, so the
+  // skill procedure (e.g. ponytail's lazy ladder) actually reaches the model — not just
+  // a one-line bullet. composeSystemPrompt (inside askModel) injects the bodies.
+  const mountedSkills = resolveDeveloperMountedSkills(options);
   const res = await askModel(
     {
       role: 'developer', taskClass: 'patch_generation', taskPacket: packet as Record<string, unknown>, storyId,
-      prompt: { base: developerSystemPromptBase() },
+      prompt: { base: developerSystemPromptBase(), mountedSkills },
     },
     deps,
   );

@@ -238,6 +238,9 @@ importers:
       '@gateloop/model-gateway':
         specifier: workspace:*
         version: link:../model-gateway
+      '@gateloop/skill-runtime':
+        specifier: workspace:*
+        version: link:../skill-runtime
 
   packages/event-log: {}
 
@@ -249,9 +252,21 @@ importers:
 
   packages/harness-core:
     dependencies:
+      '@gateloop/event-log':
+        specifier: workspace:*
+        version: link:../event-log
+      '@gateloop/permission-gateway':
+        specifier: workspace:*
+        version: link:../permission-gateway
       '@gateloop/settings':
         specifier: workspace:*
         version: link:../settings
+      '@gateloop/skill-runtime':
+        specifier: workspace:*
+        version: link:../skill-runtime
+      '@gateloop/tool-interface':
+        specifier: workspace:*
+        version: link:../tool-interface
 
   packages/model-gateway:
     dependencies:

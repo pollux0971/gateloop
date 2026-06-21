@@ -112,3 +112,107 @@ export function readSkillContent(skill: FullSkillManifest, skillsRoot: string): 
     token_estimate: Math.ceil((skill_md.length + avoid_lines.join('\n').length) / 4),
   };
 }
+
+// ── STORY-UST.1: the live-prompt loader ────────────────────────────────────────
+//
+// The single source of truth that turns the registered skill catalog into mountable
+// content WITH the SKILL.md body — used by BOTH the executor (producePatchProposal →
+// askModel → composeSystemPrompt) and the read-only introspection view. Both calling
+// the same loader is what keeps the executor's prompt and the introspection view
+// isomorphic by construction (ADR-024 §3.2). Pure-ish: reads the skills dir, no clock,
+// no network; returns [] on any read error so a missing/[]-catalog never throws.
+
+/** A skill ready to mount into the prompt: name + summary + SKILL.md body + AVOID. */
+export interface MountedSkillContent {
+  name: string;
+  summary?: string;
+  /** SKILL.md procedure body, frontmatter stripped. */
+  body: string;
+  avoid: string[];
+  token_estimate: number;
+}
+
+/** First non-empty line of a description, trimmed to a one-line summary. */
+function firstLine(s: string | undefined): string | undefined {
+  if (!s) return undefined;
+  const line = s.split('\n').map(x => x.trim()).find(x => x.length > 0);
+  return line ? line.replace(/\s+/g, ' ').slice(0, 120) : undefined;
+}
+
+/** Strip a leading `---...---` YAML frontmatter block (skill metadata, not procedure). */
+function stripFrontmatter(md: string): string {
+  return md.replace(/^---[\s\S]*?---\s*/, '').trim();
+}
+
+export interface LoadMountedSkillsOptions {
+  /** Override the catalog path (defaults to <repoRoot>/skills/skill_manifest.json). */
+  manifestPath?: string;
+}
+
+/**
+ * STORY-UST.1: load the registered skills for a role as mountable, body-carrying
+ * content, in dependency order (prerequisites first). Only `status: 'registered'`
+ * skills for the role are returned (quarantined/draft/needs_tests are excluded — the
+ * same rule as selectSkillsForRole). depends_on is read from each skill's skill.json.
+ *
+ * `repoRoot` is the gateloop/ root (catalog entry `path` is repo-root-relative, e.g.
+ * "skills/developer/ponytail-lazy"), matching readSkillContent / getSkillView usage.
+ */
+export function loadMountedSkillsForRole(
+  role: FullSkillManifest['agent_role'],
+  repoRoot: string,
+  opts: LoadMountedSkillsOptions = {},
+): MountedSkillContent[] {
+  const manifestPath = opts.manifestPath ?? path.join(repoRoot, 'skills', 'skill_manifest.json');
+  if (!fs.existsSync(manifestPath)) return [];
+  let catalog: { skills?: Array<Record<string, unknown>> };
+  try {
+    catalog = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+  } catch {
+    return [];
+  }
+
+  const entries = (catalog.skills ?? []).filter(
+    s => s.agent_role === role && s.status === 'registered',
+  );
+
+  // Build full manifests (with depends_on + description from each skill.json) so the
+  // dependency sort and the bullet summary are accurate.
+  const manifests: (FullSkillManifest & { description?: string })[] = [];
+  for (const e of entries) {
+    const skillPath = e.path as string;
+    let depends_on: string[] = [];
+    let description: string | undefined;
+    try {
+      const sj = loadSkillManifest(path.join(repoRoot, skillPath));
+      depends_on = sj.depends_on ?? [];
+      description = sj.description;
+    } catch {
+      // skill.json unreadable → treat as no deps; readSkillContent still gets the body
+    }
+    manifests.push({
+      skill_id: e.skill_id as string,
+      agent_role: role,
+      path: skillPath,
+      status: 'registered',
+      depends_on,
+      description,
+    });
+  }
+
+  const ourIds = new Set(manifests.map(m => m.skill_id));
+  const ordered = sortByDependencyOrder(manifests).filter(m => ourIds.has(m.skill_id));
+
+  const byId = new Map(manifests.map(m => [m.skill_id, m]));
+  return ordered.map(m => {
+    const content = readSkillContent(m, repoRoot);
+    const body = stripFrontmatter(content.skill_md);
+    return {
+      name: m.skill_id,
+      summary: firstLine(byId.get(m.skill_id)?.description),
+      body,
+      avoid: content.avoid_lines,
+      token_estimate: Math.ceil((body.length + content.avoid_lines.join('\n').length) / 4),
+    };
+  });
+}

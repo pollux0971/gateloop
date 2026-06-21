@@ -36,3 +36,55 @@ describe('STORY-032.3 composeSystemPrompt', () => {
     expect(agentCore.composeSystemPrompt).toBe(composeSystemPrompt);
   });
 });
+
+describe('STORY-UST.1 composeSystemPrompt injects skill bodies (the wire)', () => {
+  const WITH_BODY: MountedSkill[] = [
+    {
+      name: 'ponytail-lazy',
+      summary: 'lazy senior dev',
+      body: '## The ladder\n1. YAGNI\n2. stdlib first\n6. minimum code that works',
+      avoid: ['over-build a cache nobody profiled'],
+    },
+  ];
+
+  it('compose_system_prompt_injects_skill_body_not_one_line_bullet', () => {
+    const out = composeSystemPrompt(BASE, WITH_BODY, '');
+    // the bullet index is still present (unchanged behaviour)…
+    expect(out).toContain('## Mounted skills');
+    expect(out).toContain('- ponytail-lazy: lazy senior dev');
+    // …AND the actual procedure body now reaches the prompt (the fix)
+    expect(out).toContain('## Skill procedures');
+    expect(out).toContain('### ponytail-lazy');
+    expect(out).toContain('1. YAGNI');
+    expect(out).toContain('6. minimum code that works');
+    expect(out).toContain('AVOID: over-build a cache nobody profiled');
+  });
+
+  it('mounted_skill_carries_body_and_avoid_not_just_name_summary', () => {
+    // a body-less skill is a bullet only; a body-carrying one adds the procedures section
+    const bulletOnly = composeSystemPrompt(BASE, [{ name: 'x', summary: 'y' }], '');
+    expect(bulletOnly).toContain('## Mounted skills');
+    expect(bulletOnly).not.toContain('## Skill procedures');
+  });
+
+  it('body_injection_dependency_ordered_and_token_budgeted', () => {
+    const pad = 'x'.repeat(400); // each body ≈ 100 tokens (chars/4)
+    const skills: MountedSkill[] = [
+      { name: 'a', body: `AAA ${pad}` },
+      { name: 'b', body: `BBB ${pad}` },
+      { name: 'c', body: `CCC ${pad}` },
+    ];
+    // budget admits ~1 body; the first (dependency-earliest) is always kept, in order
+    const out = composeSystemPrompt(BASE, skills, '', { skillBodyTokenBudget: 110 });
+    expect(out.indexOf('AAA')).toBeGreaterThan(-1);
+    expect(out.indexOf('BBB')).toBe(-1);
+    // truncation is stated, never silent
+    expect(out).toContain('2 skill procedure(s) omitted for token budget');
+    // order preserved: a appears before b/c would have
+    expect(out.indexOf('### a')).toBeGreaterThan(-1);
+  });
+
+  it('deterministic with bodies: same inputs → same output', () => {
+    expect(composeSystemPrompt(BASE, WITH_BODY, '')).toBe(composeSystemPrompt(BASE, WITH_BODY, ''));
+  });
+});

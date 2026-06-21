@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import {
   isSkillForRole, validateSkillPackage, rejectSkillWithoutTests, loadSkillManifest,
-  selectSkillsForRole, sortByDependencyOrder, readSkillContent,
+  selectSkillsForRole, sortByDependencyOrder, readSkillContent, loadMountedSkillsForRole,
   type FullSkillManifest,
 } from './index';
 
@@ -81,6 +81,69 @@ describe('skill-selection', () => {
       const content = readSkillContent(skill, root);
       expect(content.avoid_lines.length).toBe(2);
       expect(content.skill_md).toContain('Do the thing');
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
+// ── STORY-UST.1: loadMountedSkillsForRole (body-carrying, dependency-ordered) ──
+function scaffoldSkill(repoRoot: string, relPath: string, skillJson: object, skillMd: string, avoid?: string) {
+  const d = path.join(repoRoot, relPath);
+  fs.mkdirSync(d, { recursive: true });
+  fs.writeFileSync(path.join(d, 'skill.json'), JSON.stringify(skillJson, null, 2));
+  fs.writeFileSync(path.join(d, 'SKILL.md'), skillMd);
+  if (avoid) fs.writeFileSync(path.join(d, '.memory.md'), `AVOID: ${avoid}\nnote: ignored\n`);
+}
+
+describe('STORY-UST.1 loadMountedSkillsForRole', () => {
+  it('returns registered role skills with body+avoid, dependency-ordered, frontmatter stripped', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'chust-'));
+    try {
+      // dep skill "base" → dependent skill "lazy"; "draft" excluded; other role excluded
+      scaffoldSkill(root, 'skills/developer/base',
+        { skill_id: 'developer.base', agent_role: 'developer', description: 'base rules\nsecond line', tests: ['t'], depends_on: [] },
+        '---\nname: base\n---\n# Base\nBASE-BODY');
+      scaffoldSkill(root, 'skills/developer/lazy',
+        { skill_id: 'developer.lazy', agent_role: 'developer', description: 'lazy ladder', tests: ['t'], depends_on: ['developer.base'] },
+        '# Lazy\nLAZY-BODY', 'over-build nothing');
+      scaffoldSkill(root, 'skills/developer/draft',
+        { skill_id: 'developer.draft', agent_role: 'developer', description: 'wip', tests: ['t'], depends_on: [] },
+        '# Draft\nDRAFT-BODY');
+      scaffoldSkill(root, 'skills/reviewer/rev',
+        { skill_id: 'reviewer.rev', agent_role: 'reviewer', description: 'rev', tests: ['t'], depends_on: [] },
+        '# Rev\nREV-BODY');
+      fs.mkdirSync(path.join(root, 'skills'), { recursive: true });
+      fs.writeFileSync(path.join(root, 'skills', 'skill_manifest.json'), JSON.stringify({
+        skills: [
+          { skill_id: 'developer.lazy', agent_role: 'developer', path: 'skills/developer/lazy', status: 'registered' },
+          { skill_id: 'developer.base', agent_role: 'developer', path: 'skills/developer/base', status: 'registered' },
+          { skill_id: 'developer.draft', agent_role: 'developer', path: 'skills/developer/draft', status: 'needs_tests' },
+          { skill_id: 'reviewer.rev', agent_role: 'reviewer', path: 'skills/reviewer/rev', status: 'registered' },
+        ],
+      }, null, 2));
+
+      const mounted = loadMountedSkillsForRole('developer', root);
+      // only registered developer skills (draft + other role excluded)
+      expect(mounted.map(m => m.name)).toEqual(['developer.base', 'developer.lazy']); // dep before dependent
+      // body carried, frontmatter stripped
+      expect(mounted[0].body).toContain('BASE-BODY');
+      expect(mounted[0].body).not.toContain('---'); // frontmatter gone
+      expect(mounted[0].body).not.toContain('name: base');
+      // avoid carried
+      expect(mounted[1].avoid).toContain('AVOID: over-build nothing');
+      // summary from description first line
+      expect(mounted[0].summary).toBe('base rules');
+      expect(mounted[0].token_estimate).toBeGreaterThan(0);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('fail-soft: missing catalog → []', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'chust2-'));
+    try {
+      expect(loadMountedSkillsForRole('developer', root)).toEqual([]);
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }

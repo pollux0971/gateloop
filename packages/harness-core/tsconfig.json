@@ -18,6 +18,7 @@
     { "path": "../event-log" },
     { "path": "../settings" },
     { "path": "../permission-gateway" },
-    { "path": "../tool-interface" }
+    { "path": "../tool-interface" },
+    { "path": "../skill-runtime" }
   ]
 }

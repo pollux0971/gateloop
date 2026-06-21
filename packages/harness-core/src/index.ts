@@ -12,6 +12,7 @@
 import { readFileSync, existsSync, readdirSync, statSync } from 'node:fs';
 import * as nodePath from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { loadMountedSkillsForRole } from '@gateloop/skill-runtime'; // STORY-UST.1: body-carrying skill loader (shared with executor → isomorphism)
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -506,6 +507,11 @@ const HARNESS_REPO_ROOT = fileURLToPath(new URL('../../../', import.meta.url)); 
 export interface MountedSkillRef {
   name: string;
   summary?: string;
+  /** STORY-UST.1: SKILL.md body — mirrors agent-core's MountedSkill so the
+   *  introspection view injects the same procedure the executor sends (isomorphism). */
+  body?: string;
+  /** STORY-UST.1: AVOID lessons mounted with the body. */
+  avoid?: string[];
 }
 
 /** Config-representative base templates per role (config-level, not an execution instance). */
@@ -518,15 +524,30 @@ export const DEFAULT_AGENT_BASE: Record<string, string> = {
   assessor: 'You are the Assessor. Author concrete acceptance tests from the intent, run them, and judge satisfaction; you write no product code.',
 };
 
-/** Read the registered skills a role mounts, from the skill manifest (config-level). */
+/**
+ * Read the registered skills a role mounts, from the skill manifest (config-level).
+ *
+ * STORY-UST.1: now carries each skill's SKILL.md `body` + AVOID via the SAME
+ * skill-runtime loader the executor uses (loadMountedSkillsForRole), in dependency
+ * order. This is what makes the introspection view ISOMORPHIC to the executor: both
+ * feed body-carrying skills, in the same order, through the same composeSystemPrompt.
+ * Fail-soft: any read error → name-only refs (never throws).
+ */
 export function mountedSkillsForRole(role: string, repoRoot: string = HARNESS_REPO_ROOT): MountedSkillRef[] {
   const manifestPath = nodePath.join(repoRoot, 'skills', 'skill_manifest.json');
   if (!existsSync(manifestPath)) return [];
-  const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as { skills?: any[] };
-  return (manifest.skills ?? [])
-    .filter(s => s.agent_role === role && s.status === 'registered')
-    .map(s => ({ name: s.skill_id as string }))
-    .sort((a, b) => a.name.localeCompare(b.name));
+  try {
+    return loadMountedSkillsForRole(role as any, repoRoot).map(s => ({
+      name: s.name, summary: s.summary, body: s.body, avoid: s.avoid,
+    }));
+  } catch {
+    // Fall back to the name-only listing (dependency order unavailable) rather than throw.
+    const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as { skills?: any[] };
+    return (manifest.skills ?? [])
+      .filter(s => s.agent_role === role && s.status === 'registered')
+      .map(s => ({ name: s.skill_id as string }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }
 }
 
 export interface AgentPromptInput {

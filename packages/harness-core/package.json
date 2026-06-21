@@ -6,6 +6,10 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
-    "@gateloop/settings": "workspace:*"
+    "@gateloop/settings": "workspace:*",
+    "@gateloop/skill-runtime": "workspace:*",
+    "@gateloop/permission-gateway": "workspace:*",
+    "@gateloop/tool-interface": "workspace:*",
+    "@gateloop/event-log": "workspace:*"
   }
 }
