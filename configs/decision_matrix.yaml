@@ -12,6 +12,20 @@ states: [resume, select, contract, develop, validate, debug, checkpoint, gate, d
 # Stops that end the run (write tracker, print resume summary)
 stop_actions: [stop_run, escalate_human, request_merge_review, request_promotion]
 
+# STORY-GATE.1 — auto-advance within an epic (ADR-025: gates face the agent, not the user).
+# After a story reaches a clean checkpoint, /goal continues to the next in-epic story
+# automatically (no per-story "stop for human"). Implemented by harness-core::decideAutoAdvance.
+# This changes ONLY the human-confirmation cadence — every agent guardrail (exit gate,
+# tool layer, regression, isolation, skill test-gate) is decided elsewhere and untouched.
+# Auto-advance KEEPS exactly these stops (decideAutoAdvance.stopReason):
+auto_advance:
+  enabled: true
+  keep_stops:
+    - trust_boundary    # a pending harness-detected human gate (see human_gate_triggers) — faces the AGENT
+    - epic_complete     # no selectable story left in the current epic → report + await direction
+    - budget_exceeded   # run_iteration_budget exhausted
+    - real_api_calls    # next step needs spend → fail-closed; agent can NEVER self-enable, user pre-authorises
+
 # Evaluated top to bottom; first matching rule fires.
 rules:
   - id: 1

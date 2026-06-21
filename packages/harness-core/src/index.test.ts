@@ -12,13 +12,15 @@
 import { describe, it, expect } from 'vitest';
 import { tmpdir } from 'os';
 import { join } from 'path';
-import { unlinkSync, existsSync } from 'fs';
+import { unlinkSync, existsSync, readFileSync } from 'fs';
 import {
   canTransition,
   tick,
   selectNextStory,
   enforceAttemptBudget,
   enforceRunBudget,
+  decideAutoAdvance,
+  storyNeedsRealApi,
   loadOrInitProjectRunState,
   persistProjectRunState,
   buildReviewSummary,
@@ -1176,5 +1178,76 @@ describe('STORY-032.4 introspection endpoints', () => {
     expect(getSkillView('planning-steward.idea-to-epic')).toEqual(sv);
     // unknown skill is a clean error, not a crash
     expect(() => getSkillView('does.not-exist')).toThrow(/skill not found/);
+  });
+});
+
+// ── STORY-GATE.1: /goal auto-advance within an epic (gates face the agent, not the user) ──
+describe('STORY-GATE.1 decideAutoAdvance', () => {
+  const epic = 'EPIC-X';
+  const budget = makeRunBudget(2, 10);
+  // a finished story + the next in-epic story, green/todo
+  const stories: StoryRecord[] = [
+    makeStory({ story_id: 'STORY-X.1', epic_id: epic, status: 'done' }),
+    makeStory({ story_id: 'STORY-X.2', epic_id: epic, status: 'todo', depends_on: ['STORY-X.1'] }),
+  ];
+
+  it('goal_auto_advances_story_to_story_within_epic_when_green', () => {
+    const d = decideAutoAdvance({ stories, currentEpicId: epic, runBudget: budget });
+    expect(d.advance).toBe(true);
+    expect(d.nextStoryId).toBe('STORY-X.2');
+    expect(d.stopReason).toBeNull();
+  });
+
+  it('stops_kept_at_trust_boundary_irreversible_sudo_network', () => {
+    const d = decideAutoAdvance({ stories, currentEpicId: epic, runBudget: budget, pendingHumanGate: 'sudo_or_irreversible' });
+    expect(d.advance).toBe(false);
+    expect(d.stopReason).toBe('trust_boundary');
+    // scope_expansion / stable_mutation likewise stop (any pending gate)
+    expect(decideAutoAdvance({ stories, currentEpicId: epic, runBudget: budget, pendingHumanGate: 'scope_expansion' }).stopReason).toBe('trust_boundary');
+  });
+
+  it('stops_kept_at_epic_completion_report_await_direction', () => {
+    // no more selectable in this epic (next selectable is a DIFFERENT epic)
+    const cross: StoryRecord[] = [
+      makeStory({ story_id: 'STORY-X.1', epic_id: epic, status: 'done' }),
+      makeStory({ story_id: 'STORY-Y.1', epic_id: 'EPIC-Y', status: 'todo' }),
+    ];
+    const d = decideAutoAdvance({ stories: cross, currentEpicId: epic, runBudget: budget });
+    expect(d.advance).toBe(false);
+    expect(d.stopReason).toBe('epic_complete');
+    // nothing selectable at all → also epic_complete (report + await)
+    const doneAll: StoryRecord[] = [makeStory({ story_id: 'STORY-X.1', epic_id: epic, status: 'done' })];
+    expect(decideAutoAdvance({ stories: doneAll, currentEpicId: epic, runBudget: budget }).stopReason).toBe('epic_complete');
+  });
+
+  it('stops_kept_at_budget_exceeded', () => {
+    const d = decideAutoAdvance({ stories, currentEpicId: epic, runBudget: makeRunBudget(10, 10) });
+    expect(d.advance).toBe(false);
+    expect(d.stopReason).toBe('budget_exceeded');
+  });
+
+  it('stops_kept_at_real_api_calls_fail_closed_agent_cannot_self_enable', () => {
+    // explicit flag
+    expect(decideAutoAdvance({ stories, currentEpicId: epic, runBudget: budget, nextStepNeedsRealApi: true }).stopReason).toBe('real_api_calls');
+    // inferred from the next story's gated blocked_reason (fail-closed)
+    const gated: StoryRecord[] = [
+      makeStory({ story_id: 'STORY-X.1', epic_id: epic, status: 'done' }),
+      makeStory({ story_id: 'STORY-X.2', epic_id: epic, status: 'todo', depends_on: ['STORY-X.1'], blocked_reason: 'gated barrier: needs real_api_calls for the A/B' }),
+    ];
+    expect(decideAutoAdvance({ stories: gated, currentEpicId: epic, runBudget: budget }).stopReason).toBe('real_api_calls');
+    expect(storyNeedsRealApi(gated[1])).toBe(true);
+    expect(storyNeedsRealApi(stories[1])).toBe(false);
+  });
+
+  it('agent_guardrails_untouched_only_human_confirmation_cadence_changed', () => {
+    // decideAutoAdvance never inspects/relaxes write-set, tool grants, isolation, etc.
+    // It only chooses advance-vs-stop. Guardrail surfaces are decided by other functions
+    // (checkHumanGate / write-set / tool layer), which this story does not modify.
+    const src = readFileSync(new URL('./index.ts', import.meta.url), 'utf8');
+    const fn = src.slice(src.indexOf('export function decideAutoAdvance'), src.indexOf('export function decideAutoAdvance') + 1200);
+    // the decision function must not touch guardrail mechanisms
+    for (const banned of ['allowedWriteSet', 'allowed_write_set', 'isShellLikeTool', 'real_api_calls = ', 'setEnabled', 'PROVIDER_SECRET_PATH']) {
+      expect(fn.includes(banned)).toBe(false);
+    }
   });
 });

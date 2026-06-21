@@ -166,6 +166,85 @@ export function enforceRunBudget(budget: RunBudget): 'ok' | 'stop' {
   return budget.iterations_used < budget.run_iteration_budget ? 'ok' : 'stop';
 }
 
+// ── STORY-GATE.1: /goal auto-advance within an epic (gates face the agent, not the user) ──
+//
+// ADR-025: a per-story "STOP for human" pause stops the USER's decision (their own
+// roadmap), so it is approval friction to remove — /goal should auto-advance story→story
+// within an epic when the work is green. This changes ONLY the human-confirmation cadence;
+// it touches NO agent guardrail (exit gate, tool layer, regression, isolation are decided
+// elsewhere and are untouched). "Auto-advance" deliberately KEEPS four stops:
+//   1. trust_boundary  — a real harness-detected human gate is pending (scope expansion,
+//      stable/secret/sudo/network/irreversible/policy/promotion). The gate faces the AGENT.
+//   2. epic_complete   — no more selectable story in THIS epic (or the next selectable is in
+//      a different epic): report + await direction (the user's call on what's next).
+//   3. budget_exceeded — run budget exhausted.
+//   4. real_api_calls  — the next step needs spend: fail-closed, the agent can NEVER
+//      self-enable; the user pre-authorises. This is a guardrail (protects the user's money),
+//      not approval friction.
+
+export type AutoAdvanceStop = 'trust_boundary' | 'epic_complete' | 'budget_exceeded' | 'real_api_calls';
+
+export interface AutoAdvanceInput {
+  /** Full backlog (for DAG-aware next-story selection). */
+  stories: StoryRecord[];
+  /** The epic just worked — auto-advance stays WITHIN it; crossing epics stops. */
+  currentEpicId: string;
+  runBudget: RunBudget;
+  /** A real, harness-detected human-gate reason pending (trust boundary), if any. */
+  pendingHumanGate?: HumanGateReason | null;
+  /** Whether the next selectable step needs real_api_calls (spend). Default: inferred from
+   *  the next story's blocked_reason markers (gated / real_api_calls). Fail-closed. */
+  nextStepNeedsRealApi?: boolean;
+}
+
+export interface AutoAdvanceDecision {
+  advance: boolean;
+  nextStoryId: string | null;
+  /** Why the loop stopped for the human (null when advancing). */
+  stopReason: AutoAdvanceStop | null;
+}
+
+/** A story whose blocked_reason marks it as needing spend (gated / real_api_calls). */
+export function storyNeedsRealApi(story: StoryRecord | undefined): boolean {
+  if (!story?.blocked_reason) return false;
+  return /real_api_calls|gated|real[-_ ]?model|billed/i.test(story.blocked_reason);
+}
+
+/**
+ * STORY-GATE.1: decide whether /goal auto-advances to the next story or stops for the
+ * human. Pure + deterministic. Order matters — the guardrail/boundary stops are checked
+ * BEFORE the advance, and "unsure → stop" (fail-closed) for the spend boundary.
+ *
+ * It does NOT decide whether the just-finished story was green — that is the validators'
+ * job (an agent guardrail, untouched). It is called only AFTER a story reached a clean
+ * checkpoint, to choose the human-confirmation cadence.
+ */
+export function decideAutoAdvance(input: AutoAdvanceInput): AutoAdvanceDecision {
+  const stop = (stopReason: AutoAdvanceStop): AutoAdvanceDecision => ({ advance: false, nextStoryId: null, stopReason });
+
+  // 1. Budget first — never advance past the run budget.
+  if (enforceRunBudget(input.runBudget) === 'stop') return stop('budget_exceeded');
+
+  // 2. A pending trust-boundary human gate always stops (the gate faces the AGENT).
+  if (input.pendingHumanGate) return stop('trust_boundary');
+
+  // 3. Pick the next runnable story (DAG-aware; same selector the loop already uses).
+  const nextId = selectNextStory(input.stories);
+  if (nextId === null) return stop('epic_complete'); // nothing selectable in scope → report + await
+  const next = input.stories.find(s => s.story_id === nextId);
+
+  // 4. Crossing out of the current epic = epic complete → stop to report + await direction.
+  if (next && next.epic_id !== input.currentEpicId) return stop('epic_complete');
+
+  // 5. Spend boundary (fail-closed): if the next step needs real_api_calls, stop. The agent
+  //    can never self-enable; the user pre-authorises. Explicit flag wins; else infer.
+  const needsSpend = input.nextStepNeedsRealApi ?? storyNeedsRealApi(next);
+  if (needsSpend) return stop('real_api_calls');
+
+  // 6. Green, in-epic, no boundary → auto-advance (the "smooth for the user" half).
+  return { advance: true, nextStoryId: nextId, stopReason: null };
+}
+
 // ── Human gate detection (deterministic — never trusts agent self-report) ─────
 
 /** Returns the gate reason if the proposed action requires human approval, or null. */
