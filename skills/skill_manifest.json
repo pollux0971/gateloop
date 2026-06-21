@@ -1073,6 +1073,21 @@
         "at": "2026-06-21T00:00:00Z"
       },
       "leakage_audit": "pass"
+    },
+    {
+      "skill_id": "reviewer.ponytail-review",
+      "agent_role": "reviewer",
+      "path": "skills/reviewer/ponytail-review",
+      "status": "registered",
+      "tests": "skills/reviewer/ponytail-review/tests",
+      "last_evaluation": {
+        "passed": 5,
+        "total": 5,
+        "fresh_runs": 5,
+        "pass_rate": 1.0,
+        "at": "2026-06-21T00:00:00Z"
+      },
+      "leakage_audit": "pass"
     }
   ]
 }
