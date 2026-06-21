@@ -1,0 +1,16 @@
+{
+  "name": "@gateloop/codegraph-client",
+  "version": "0.1.0",
+  "description": "Real codegraph engine client, resolved robustly (no hardcoded path) and kept behind the @gateloop/codegraph-adapter seam. EPIC-CW.",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "vitest": "^2",
+    "typescript": "^5"
+  }
+}

@@ -14,6 +14,9 @@
       "path": "packages/codegraph-adapter"
     },
     {
+      "path": "packages/codegraph-client"
+    },
+    {
       "path": "packages/container-runtime"
     },
     {

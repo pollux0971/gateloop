@@ -1,0 +1,224 @@
+/**
+ * @gateloop/codegraph-client — the REAL codegraph engine client (EPIC-CW).
+ *
+ * The engine (@colbymchenry/codegraph, MIT, local-first SQLite, 20+ languages) is an
+ * implementation detail HIDDEN BEHIND the @gateloop/codegraph-adapter seam: this package
+ * imports only the adapter's `CodeGraphClient` interface, and the core (provider-driver,
+ * harness-core, supervisor) never imports the engine — it sees only the seam. CI falls back
+ * to `fixtureClient`; a self-built engine (Option C) could slot in behind the same interface.
+ *
+ * STORY-CW.1 deliverable: ROBUST binary resolution (PATH / npx / config override — explicitly
+ * NOT the dead client's hardcoded `/data/python/codegraph_engine/...` path) + a real-index smoke
+ * that proves the engine is usable from GateLoop (build a `.codegraph/` index over a fixture repo,
+ * run a query, get structured JSON back). All local (host CPU), zero API cost. CW.2 maps the full
+ * adapter operation set over this resolver/runner.
+ *
+ * Design: docs/architecture/22_CODEGRAPH_WIRING.md
+ */
+import { spawnSync } from 'node:child_process';
+import fs from 'node:fs';
+import path from 'node:path';
+import type { CodeGraphClient } from '@gateloop/codegraph-adapter';
+
+// ── Robust binary resolution (the anti-hardcoded-path fix) ───────────────────────────
+
+export type BinSource = 'env' | 'path' | 'npx';
+
+/** A resolved engine invocation: `command` + a fixed `baseArgs` prefix. NEVER a hardcoded path. */
+export interface ResolvedBin {
+  command: string;
+  baseArgs: string[];
+  source: BinSource;
+}
+
+/** Locate an executable on PATH (cross-platform). Returns the first hit or null. */
+function which(cmd: string, env: NodeJS.ProcessEnv): string | null {
+  const finder = process.platform === 'win32' ? 'where' : 'which';
+  const r = spawnSync(finder, [cmd], { encoding: 'utf8', env });
+  if (r.status === 0 && r.stdout) {
+    return r.stdout.split(/\r?\n/).map((s) => s.trim()).find(Boolean) ?? null;
+  }
+  return null;
+}
+
+/**
+ * Resolve the codegraph engine invocation with NO hardcoded path (the dead client's
+ * `engineCodegraph` pointed at a fixed `.../dist/bin/codegraph.js` that didn't exist — the exact
+ * anti-pattern this story avoids). Resolution order:
+ *   1. explicit `CODEGRAPH_BIN` override (a binary, or a `.js` run via the current node);
+ *   2. `codegraph` on PATH (the normal install — e.g. ~/.local/bin/codegraph — but discovered, not assumed);
+ *   3. `npx @colbymchenry/codegraph` (zero-install fallback).
+ * Returns null when nothing is resolvable (callers fall back to the fixture/NULL client).
+ */
+export function resolveCodegraphBin(env: NodeJS.ProcessEnv = process.env): ResolvedBin | null {
+  const override = env.CODEGRAPH_BIN?.trim();
+  if (override) {
+    return override.endsWith('.js')
+      ? { command: process.execPath, baseArgs: [override], source: 'env' }
+      : { command: override, baseArgs: [], source: 'env' };
+  }
+  const onPath = which('codegraph', env);
+  if (onPath) return { command: onPath, baseArgs: [], source: 'path' };
+  if (which('npx', env)) return { command: 'npx', baseArgs: ['--yes', '@colbymchenry/codegraph'], source: 'npx' };
+  return null;
+}
+
+// ── Low-level engine runner (local subprocess; telemetry off; no network at query time) ──
+
+export interface EngineRunResult {
+  ok: boolean;
+  stdout: string;
+  stderr: string;
+  code: number | null;
+}
+
+/** Run the resolved engine with `args` in `cwd`. Telemetry disabled; bounded by a timeout. */
+export function runEngine(bin: ResolvedBin, args: string[], cwd: string, timeoutMs = 120_000): EngineRunResult {
+  const r = spawnSync(bin.command, [...bin.baseArgs, ...args], {
+    cwd,
+    encoding: 'utf8',
+    timeout: timeoutMs,
+    env: { ...process.env, CODEGRAPH_TELEMETRY: '0' },
+  });
+  return { ok: r.status === 0, stdout: r.stdout ?? '', stderr: r.stderr ?? '', code: r.status };
+}
+
+/** Is the engine resolvable AND runnable (a real `--version` like `0.9.5` comes back)? Local, free. */
+export function engineAvailable(env: NodeJS.ProcessEnv = process.env): boolean {
+  const bin = resolveCodegraphBin(env);
+  if (!bin) return false;
+  const r = runEngine(bin, ['--version'], process.cwd(), 15_000);
+  return r.ok && /\d+\.\d+/.test(r.stdout);
+}
+
+function parseJson(s: string): unknown {
+  try {
+    return JSON.parse(s.trim());
+  } catch {
+    return null;
+  }
+}
+
+// ── Index + query primitives (used by the smoke; CW.2 maps the adapter ops over these) ──
+
+/** Build (or incrementally update) the `.codegraph/` index for `wsRoot`. Local CPU, zero API. */
+export function buildIndex(wsRoot: string, bin: ResolvedBin = mustResolve()): EngineRunResult {
+  const hasIndex = fs.existsSync(path.join(wsRoot, '.codegraph'));
+  // CW.1: first build via `init --index`; incremental `sync` thereafter. CW.3 owns the full lifecycle.
+  return hasIndex ? runEngine(bin, ['sync', wsRoot], wsRoot) : runEngine(bin, ['init', wsRoot, '--index'], wsRoot);
+}
+
+/** One engine node from `query <search> --json` (the subset the harness uses). */
+export interface EngineNode {
+  id: string;
+  kind: string;
+  name: string;
+  qualifiedName?: string;
+  filePath: string;
+  language?: string;
+  startLine?: number;
+  endLine?: number;
+  signature?: string | null;
+  isExported?: boolean;
+}
+
+/** Raw symbol search: `codegraph query <search> --json` → the matched nodes (scored). */
+export function queryRaw(wsRoot: string, search: string, bin: ResolvedBin = mustResolve()): EngineNode[] {
+  const r = runEngine(bin, ['query', search, '--json'], wsRoot);
+  const parsed = parseJson(r.stdout);
+  if (!Array.isArray(parsed)) return [];
+  return parsed
+    .map((row) => (row && typeof row === 'object' ? (row as { node?: EngineNode }).node : undefined))
+    .filter((n): n is EngineNode => !!n && typeof n.filePath === 'string' && typeof n.name === 'string');
+}
+
+export interface IndexStatus {
+  initialized: boolean;
+  fileCount?: number;
+  nodeCount?: number;
+  edgeCount?: number;
+}
+
+/** `codegraph status --json` → the index statistics (proves the index exists + is populated). */
+export function indexStatus(wsRoot: string, bin: ResolvedBin = mustResolve()): IndexStatus {
+  const r = runEngine(bin, ['status', wsRoot, '--json'], wsRoot);
+  const parsed = parseJson(r.stdout);
+  if (parsed && typeof parsed === 'object') return parsed as IndexStatus;
+  return { initialized: false };
+}
+
+function mustResolve(): ResolvedBin {
+  const bin = resolveCodegraphBin();
+  if (!bin) {
+    throw new Error(
+      'codegraph engine not resolvable — set CODEGRAPH_BIN, install `codegraph` on PATH, or provide npx ' +
+        '(this is the robust resolution; there is intentionally NO hardcoded fallback path)',
+    );
+  }
+  return bin;
+}
+
+// ── The real-index smoke (STORY-CW.1: "prove the engine is usable from GateLoop") ──
+
+export interface IndexSmokeResult {
+  resolved: ResolvedBin;
+  indexBuilt: boolean;
+  statusInitialized: boolean;
+  nodeCount: number;
+  /** A query that returned structured JSON nodes (proves query works end-to-end). */
+  queriedSymbol: string;
+  queryHitFiles: string[];
+}
+
+/**
+ * Build an index over `wsRoot`, then run a real query + status and confirm structured JSON comes
+ * back. This is where "the engine is actually usable from GateLoop" is proven — all local, zero API.
+ */
+export function indexSmoke(wsRoot: string, querySymbol: string, bin: ResolvedBin = mustResolve()): IndexSmokeResult {
+  const built = buildIndex(wsRoot, bin);
+  const status = indexStatus(wsRoot, bin);
+  const nodes = queryRaw(wsRoot, querySymbol, bin);
+  return {
+    resolved: bin,
+    indexBuilt: built.ok,
+    statusInitialized: status.initialized === true,
+    nodeCount: status.nodeCount ?? 0,
+    queriedSymbol: querySymbol,
+    queryHitFiles: [...new Set(nodes.map((n) => n.filePath))],
+  };
+}
+
+// ── CI fixture client (implements the adapter seam; no engine) ──────────────────────
+
+/** A `CodeGraphClient` the harness can use without the engine — known impact + located symbols. */
+export interface FixtureSpec {
+  /** file → dependent files (for `impact`). */
+  impact?: Record<string, string[]>;
+  /** symbol → locations (for `symbol_lookup`). */
+  symbols?: Record<string, { file: string; line: number; kind?: string }[]>;
+}
+
+export interface GateloopCodegraphClient extends CodeGraphClient {
+  readonly backend: string;
+}
+
+/** CI-safe fixture client. Proves the seam wiring without the engine; swappable to the real client. */
+export function fixtureClient(spec: FixtureSpec = {}): GateloopCodegraphClient {
+  return {
+    backend: 'fixture',
+    async query(q) {
+      if (q.operation === 'impact') {
+        const impacted = new Set<string>();
+        for (const f of q.target.split(',').map((s) => s.trim()).filter(Boolean)) {
+          for (const dep of spec.impact?.[f] ?? []) impacted.add(dep);
+        }
+        return { locations: [], impacted_files: [...impacted] };
+      }
+      if (q.operation === 'symbol_lookup') {
+        const locs = (spec.symbols?.[q.target] ?? []).map((l) => ({ file: l.file, line: l.line, kind: l.kind }));
+        return { locations: locs, impacted_files: [] };
+      }
+      return { locations: [], impacted_files: [] };
+    },
+  };
+}
