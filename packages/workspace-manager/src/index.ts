@@ -121,6 +121,24 @@ export function collectDiffAgainstHead(ws: WorkspaceManifest): string {
   return git(ws.root, ['diff', '--cached', 'HEAD']);
 }
 
+/**
+ * Make git ignore `patterns` inside the workspace via `.git/info/exclude` — a LOCAL, untracked
+ * git facility (EPIC-CW.3). Used for harness state like the codegraph `.codegraph/` index: it must
+ * be kept out of `git add -A` so it never enters `collectDiffAgainstHead` (the exit-gate diff) or
+ * the agent write-set. Unlike a `.gitignore` file, `.git/info/exclude` is not part of the working
+ * tree, so it never appears in a diff itself and needs no baseline commit. Idempotent.
+ */
+export function excludeFromWorkspace(ws: WorkspaceManifest, patterns: string[]): void {
+  resolveInsideWorkspace(ws.root, '.'); // assert a real root
+  const excludePath = path.join(ws.root, '.git', 'info', 'exclude');
+  fs.mkdirSync(path.dirname(excludePath), { recursive: true });
+  const existing = fs.existsSync(excludePath) ? fs.readFileSync(excludePath, 'utf8') : '';
+  const have = new Set(existing.split('\n').map((l) => l.trim()));
+  const toAdd = patterns.filter((p) => !have.has(p.trim()));
+  if (toAdd.length === 0) return;
+  fs.writeFileSync(excludePath, (existing.endsWith('\n') || existing === '' ? existing : existing + '\n') + toAdd.join('\n') + '\n');
+}
+
 /** Destroy the workspace directory and unregister it. */
 export function cleanupWorkspace(registry: WorkspaceRegistry, ws: WorkspaceManifest): void {
   fs.rmSync(ws.root, { recursive: true, force: true });

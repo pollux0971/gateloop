@@ -346,3 +346,54 @@ export function engineClient(opts: EngineClientOptions): GateloopCodegraphClient
     },
   };
 }
+
+// ── STORY-CW.3: index lifecycle (explicit, no watcher) + `.codegraph/` exclusion ─────
+
+/** The engine's index directory — harness state, never agent output. */
+export const CODEGRAPH_DIR = '.codegraph';
+
+/**
+ * Args for the Step-0 index build (run once at run start, in the disposable workspace).
+ * EXPLICIT `init --index` — deliberately NO `--watch`/`serve`: the harness drives the index on a
+ * known schedule (Step 0 + checkpoint), not via a background file-watcher that can silently lag.
+ */
+export function step0IndexArgs(wsRoot: string): string[] {
+  return ['init', wsRoot, '--index'];
+}
+
+/** Args for an explicit incremental sync after a checkpoint. Again EXPLICIT — never a watcher. */
+export function checkpointSyncArgs(wsRoot: string): string[] {
+  return ['sync', wsRoot];
+}
+
+/** True iff the args use a background/long-running mode (watch/serve) — which the harness forbids. */
+export function usesBackgroundWatcher(args: string[]): boolean {
+  return args.some((a) => /^(--watch|-w|watch|serve|--serve|--mcp)$/.test(a));
+}
+
+/** Step-0 build of the workspace index (explicit, local CPU, zero API). */
+export function step0BuildIndex(wsRoot: string, bin: ResolvedBin = mustResolve()): EngineRunResult {
+  return runEngine(bin, step0IndexArgs(wsRoot), wsRoot);
+}
+
+/** Explicit incremental sync after a checkpoint changed indexed files (no watcher). */
+export function checkpointSync(wsRoot: string, bin: ResolvedBin = mustResolve()): EngineRunResult {
+  return runEngine(bin, checkpointSyncArgs(wsRoot), wsRoot);
+}
+
+/**
+ * Keep `.codegraph/` out of git for a workspace by appending it to `.git/info/exclude` (LOCAL,
+ * untracked — never appears in a diff itself, needs no baseline commit). After this, `git add -A`
+ * skips the index, so it never enters the exit-gate diff (`collectDiffAgainstHead`) or the agent
+ * write-set. Idempotent. (workspace-manager exposes the same via `excludeFromWorkspace`; this
+ * standalone variant is for callers that hold only a path, not a WorkspaceManifest.)
+ */
+export function excludeCodegraphFromGit(wsRoot: string): void {
+  const excludePath = path.join(wsRoot, '.git', 'info', 'exclude');
+  if (!fs.existsSync(path.join(wsRoot, '.git'))) return; // not a git workspace — nothing to exclude
+  fs.mkdirSync(path.dirname(excludePath), { recursive: true });
+  const existing = fs.existsSync(excludePath) ? fs.readFileSync(excludePath, 'utf8') : '';
+  const entry = `${CODEGRAPH_DIR}/`;
+  if (existing.split('\n').map((l) => l.trim()).includes(entry)) return;
+  fs.writeFileSync(excludePath, (existing && !existing.endsWith('\n') ? existing + '\n' : existing) + entry + '\n');
+}

@@ -24,3 +24,8 @@ packages/*/src/**/*.d.ts
 # Fixture run output (test artifacts) + build-side eval planning — never commit
 .gateloop-fixture-out/
 builder/planning/eval_idea_*.md
+
+# CodeGraph index (EPIC-CW) — harness state, NOT agent output / not a tracked artifact.
+# Excluded here (product repo) and via each disposable workspace's .git/info/exclude, so the
+# index never leaks into a git diff / the exit-gate diff / the agent write-set.
+.codegraph/
