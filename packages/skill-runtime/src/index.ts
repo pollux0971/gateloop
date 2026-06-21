@@ -180,7 +180,11 @@ export function loadMountedSkillsForRole(
   // dependency sort and the bullet summary are accurate.
   const manifests: (FullSkillManifest & { description?: string })[] = [];
   for (const e of entries) {
-    const skillPath = e.path as string;
+    // Catalog entries may omit `path`; derive skills/<role>/<name> from the skill_id
+    // (the repo convention: "developer.cli-tool-template" → skills/developer/cli-tool-template).
+    const id = e.skill_id as string;
+    const derived = `skills/${role}/${id.includes('.') ? id.split('.').slice(1).join('.') : id}`;
+    const skillPath = (typeof e.path === 'string' && e.path.length > 0) ? e.path : derived;
     let depends_on: string[] = [];
     let description: string | undefined;
     try {

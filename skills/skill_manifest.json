@@ -1058,6 +1058,21 @@
         "at": "2026-06-13T16:30:24.478265Z"
       },
       "leakage_audit": "unrun"
+    },
+    {
+      "skill_id": "developer.ponytail-lazy",
+      "agent_role": "developer",
+      "path": "skills/developer/ponytail-lazy",
+      "status": "registered",
+      "tests": "skills/developer/ponytail-lazy/tests",
+      "last_evaluation": {
+        "passed": 6,
+        "total": 6,
+        "fresh_runs": 5,
+        "pass_rate": 1.0,
+        "at": "2026-06-21T00:00:00Z"
+      },
+      "leakage_audit": "pass"
     }
   ]
 }

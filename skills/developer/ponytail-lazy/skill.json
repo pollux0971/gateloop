@@ -1,0 +1,43 @@
+{
+  "skill_id": "developer.ponytail-lazy",
+  "agent_role": "developer",
+  "description": "Lazy senior dev discipline: the smallest correct change that satisfies the contract. YAGNI, stdlib before custom code, native platform before dependencies, one line before fifty. Bounded by the contract and the additive gate (deletion never strips existing exports; over-build is questioned via escalation, not silently omitted).",
+  "version": "0.1.0",
+  "status": "registered",
+  "entry_documents": [
+    "SKILL.md"
+  ],
+  "scripts": [
+    "scripts/evaluate.py"
+  ],
+  "tests": [
+    "tests/test_skill.py"
+  ],
+  "validation": [
+    "pytest -q tests/"
+  ],
+  "memory_file": ".memory.md",
+  "depends_on": [],
+  "enhances": [
+    "developer.patch-proposal"
+  ],
+  "provenance": {
+    "source_story": "",
+    "source_trajectory": "adapted from ponytail (MIT, Dietrich Gebert)",
+    "created_by": "harness"
+  },
+  "failure_signatures": [
+    "over|engineered",
+    "unrequested|abstraction",
+    "new|dependency|avoidable",
+    "removed|existing|export"
+  ],
+  "last_evaluation": {
+    "passed": 6,
+    "total": 6,
+    "fresh_runs": 5,
+    "pass_rate": 1.0,
+    "at": "2026-06-21T00:00:00Z"
+  },
+  "leakage_audit": "pass"
+}

@@ -149,3 +149,25 @@ describe('STORY-UST.1 loadMountedSkillsForRole', () => {
     }
   });
 });
+
+// ── STORY-UST.2: ponytail-lazy is registered and mounts WITH its body (real repo) ──
+import { fileURLToPath } from 'node:url';
+describe('STORY-UST.2 ponytail-lazy registered developer skill', () => {
+  const repoRoot = fileURLToPath(new URL('../../../', import.meta.url)); // packages/skill-runtime/src → gateloop/
+  it('loads as a registered developer skill with the lazy-ladder body + coordination edits', () => {
+    const mounted = loadMountedSkillsForRole('developer', repoRoot);
+    const pony = mounted.find(m => m.name === 'developer.ponytail-lazy');
+    expect(pony).toBeDefined();
+    // the actual SKILL.md body reached the mount (not just a name bullet) — the UST.1 wire
+    expect(pony!.body.toLowerCase()).toContain('lazy senior developer');
+    expect(pony!.body).toContain('minimum code that works');
+    // ADR-023 §3.3 coordination edit 1: deletion bounded by the additive gate
+    expect(pony!.body).toContain('Never remove an existing exported');
+    expect(pony!.body.toLowerCase()).toContain('additive gate');
+    // coordination edit 2: question via escalation, not silent under-building
+    expect(pony!.body.toLowerCase()).toContain('escalation');
+    // host cruft stripped (GateLoop injects via composeSystemPrompt, not host hooks/MCP)
+    expect(pony!.body.toLowerCase()).not.toContain('claude code');
+    expect(pony!.body.toLowerCase()).not.toContain('statusline');
+  });
+});
