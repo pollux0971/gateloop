@@ -187,7 +187,10 @@ human_gate_triggers:
   - sudo_or_privileged_host_op
   - network_escalation
   - irreversible_deletion
-  - policy_change
+  - policy_change            # STORY-GATE.3: refined — only a GUARDRAIL-WEAKENING policy edit
+                             # stops (gate-control::classifyPolicyChange decision='stop'). Benign
+                             # user config (routing/model/budget/skill toggles) → apply-and-log,
+                             # no stop. Classifier is conservative: unrecognised key ⇒ stop.
   - container_profile_weakening
   - exceed_story_write_set
   - scope_expansion

@@ -125,3 +125,53 @@ describe('gate-control §0.2 — the six guardrails (fixture-proven)', () => {
     expect(io.dump()).toMatch(/ci_override: true/);    // untouched
   });
 });
+
+// ── STORY-GATE.3: policy gate only stops guardrail-weakening changes ──
+import { classifyPolicyChange, diffPolicy } from './index.ts';
+
+describe('STORY-GATE.3 classifyPolicyChange', () => {
+  it('examples_routing_model_budget_skill_toggle_apply_and_log', () => {
+    const before = { routing: { developer: 'a' }, model: 'gpt', budgets: { run_iteration_budget: 12 }, skills: { 'developer.ponytail-lazy': { enabled: true } } };
+    const after  = { routing: { developer: 'b' }, model: 'gpt-5', budgets: { run_iteration_budget: 20 }, skills: { 'developer.ponytail-lazy': { enabled: false } } };
+    const c = classifyPolicyChange(before, after);
+    expect(c.decision).toBe('apply_and_log');
+    expect(c.weakensGuardrail).toBe(false);
+    expect(c.changedKeys.length).toBeGreaterThan(0); // it DID detect changes, just benign ones
+  });
+
+  it('guardrail_weakening_policy_change_still_stops — real_api_calls enable', () => {
+    const c = classifyPolicyChange({ real_api_calls: { enabled: false } }, { real_api_calls: { enabled: true } });
+    expect(c.decision).toBe('stop');
+    expect(c.reasons.join(' ')).toMatch(/spending enabled/);
+  });
+
+  it('examples_writeset_loosen_defaultdeny_off_isolation_lower_stop', () => {
+    // write-set widened
+    expect(classifyPolicyChange({ allowed_write_set: ['pkg/a/**'] }, { allowed_write_set: ['pkg/a/**', 'pkg/b/**'] }).decision).toBe('stop');
+    // default-deny turned off
+    expect(classifyPolicyChange({ tool_policy: { default_deny: true } }, { tool_policy: { default_deny: false } }).decision).toBe('stop');
+    // tools gained shell
+    expect(classifyPolicyChange({ allowed_tools: ['read'] }, { allowed_tools: ['read', 'bash'] }).decision).toBe('stop');
+    // network opened
+    expect(classifyPolicyChange({ isolation: { network: false } }, { isolation: { network: true } }).decision).toBe('stop');
+    // sandbox disabled
+    expect(classifyPolicyChange({ sandbox: { enabled: true } }, { sandbox: { enabled: false } }).decision).toBe('stop');
+  });
+
+  it('classifier_explicit_and_conservative_unsure_treated_as_weakening', () => {
+    // an unrecognised key that isn't provably benign → conservative stop
+    const c = classifyPolicyChange({ mystery_flag: 1 }, { mystery_flag: 2 });
+    expect(c.decision).toBe('stop');
+    expect(c.reasons.join(' ')).toMatch(/unrecognised|conservative/);
+  });
+
+  it('strengthening a guardrail is not a stop (real_api_calls off, write-set narrowed)', () => {
+    expect(classifyPolicyChange({ real_api_calls: { enabled: true } }, { real_api_calls: { enabled: false } }).decision).toBe('apply_and_log');
+    expect(classifyPolicyChange({ allowed_write_set: ['a/**', 'b/**'] }, { allowed_write_set: ['a/**'] }).decision).toBe('apply_and_log');
+  });
+
+  it('diffPolicy detects nested leaf changes', () => {
+    expect(diffPolicy({ a: { b: 1 } }, { a: { b: 2 } }).map(c => c.key)).toEqual(['a.b']);
+    expect(diffPolicy({ a: 1 }, { a: 1 })).toEqual([]);
+  });
+});

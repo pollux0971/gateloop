@@ -236,3 +236,130 @@ export async function runGated<T>(fn: () => Promise<T>, opts: GatedRunOptions): 
 
   return { ran: true, reason: 'gated run completed; gate auto-closed and verified', result, gateClosedVerified: true };
 }
+
+// ── STORY-GATE.3: policy-change classifier (gate only guardrail-weakening changes) ──
+//
+// ADR-025: most policy edits are the USER's decision (routing, model, budget numbers,
+// skill toggles, non-guardrail config) and should apply-and-log without a stop. Only a
+// change that WEAKENS an agent guardrail (loosen write-set, disable default-deny, widen
+// tools, lower isolation, enable real_api_calls) must STOP. The classifier is explicit
+// and CONSERVATIVE: if it cannot prove a change is benign, it treats it as
+// guardrail-weakening and stops (fail-closed — the gate faces the agent's safety).
+
+/** Keys that touch an agent guardrail. A change here is scrutinised for weakening. */
+const GUARDRAIL_KEY =
+  /real_api_calls|kill_switch|default[._-]?deny|write[._-]?set|allowed_write|allowed_tools|\btools\b|isolation|network|egress|sandbox|container|profile|secret|protected|promotion|permission|bash|shell|sudo|confinement/i;
+
+/** Keys that are clearly the user's own, non-guardrail config → apply-and-log. */
+const BENIGN_KEY =
+  /routing|model|provider|budget|theme|\bui\b|notification|timeout|retry|temperature|max_tokens|maxtokens|skill/i;
+
+export interface PolicyKeyChange { key: string; before: unknown; after: unknown }
+
+export interface PolicyChangeClassification {
+  decision: 'stop' | 'apply_and_log';
+  weakensGuardrail: boolean;
+  changedKeys: string[];
+  /** Per-key reasons for the stop (empty when apply_and_log). */
+  reasons: string[];
+}
+
+/** Flatten an object to dotted-path leaves (arrays compared as JSON). */
+function flatten(obj: unknown, prefix = ''): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  if (obj && typeof obj === 'object' && !Array.isArray(obj)) {
+    for (const [k, v] of Object.entries(obj as Record<string, unknown>)) {
+      const key = prefix ? `${prefix}.${k}` : k;
+      if (v && typeof v === 'object' && !Array.isArray(v)) Object.assign(out, flatten(v, key));
+      else out[key] = v;
+    }
+  } else {
+    out[prefix] = obj;
+  }
+  return out;
+}
+
+/** Diff two policy objects → the leaf keys whose value changed. */
+export function diffPolicy(before: Record<string, unknown>, after: Record<string, unknown>): PolicyKeyChange[] {
+  const a = flatten(before), b = flatten(after);
+  const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
+  const changes: PolicyKeyChange[] = [];
+  for (const k of keys) {
+    if (JSON.stringify(a[k]) !== JSON.stringify(b[k])) changes.push({ key: k, before: a[k], after: b[k] });
+  }
+  return changes;
+}
+
+/** Does a single guardrail-key change WEAKEN the guardrail? Conservative: unknown → true. */
+function weakensGuardrail(c: PolicyKeyChange): { weakens: boolean; reason: string } {
+  const k = c.key.toLowerCase();
+  const before = c.before, after = c.after;
+  // real_api_calls.enabled — INVERTED semantics: enabling spend (false→true) weakens;
+  // disabling (true→false) strengthens. (kill_switch handled just below.)
+  if (/real_api/.test(k) && !/kill_switch/.test(k)) {
+    if (before === false && after === true) return { weakens: true, reason: `${c.key}: spending enabled (false→true)` };
+    if (before === true && after === false) return { weakens: false, reason: '' }; // spend disabled = strengthen
+    return { weakens: true, reason: `${c.key}: ambiguous real_api change → conservative stop` };
+  }
+  // default-deny / confinement: a protective guard where true=safe. true→false weakens.
+  if (/default[._-]?deny|confinement/.test(k)) {
+    if (before === true && after === false) return { weakens: true, reason: `${c.key}: guard turned off (true→false)` };
+    if (before === false && after === true) return { weakens: false, reason: '' }; // guard turned ON = strengthen
+    return { weakens: true, reason: `${c.key}: ambiguous guardrail change → conservative stop` };
+  }
+  if (/kill_switch/.test(k)) {
+    return before === true && after === false
+      ? { weakens: true, reason: `${c.key}: kill-switch disabled` }
+      : { weakens: false, reason: '' };
+  }
+  // write-set / allowed_tools / tools: weaken if the set grew or gained shell/bash
+  if (/write[._-]?set|allowed_write|allowed_tools|\btools\b/.test(k)) {
+    const bs = JSON.stringify(before ?? ''); const as = JSON.stringify(after ?? '');
+    if (/bash|shell|sudo|\*\*/i.test(as) && !/bash|shell|sudo|\*\*/i.test(bs)) return { weakens: true, reason: `${c.key}: added shell/broad-glob access` };
+    if (as.length > bs.length) return { weakens: true, reason: `${c.key}: scope widened` };
+    if (as.length < bs.length) return { weakens: false, reason: '' }; // narrowed = strengthen
+    return { weakens: true, reason: `${c.key}: scope changed → conservative stop` };
+  }
+  // network / egress / sandbox / isolation / container / profile / secret / protected / promotion / permission
+  if (/network|egress/.test(k)) {
+    return before === false && after === true
+      ? { weakens: true, reason: `${c.key}: network/egress opened` }
+      : (before === true && after === false ? { weakens: false, reason: '' } : { weakens: true, reason: `${c.key}: ambiguous → conservative stop` });
+  }
+  if (/sandbox/.test(k)) {
+    return before === true && after === false
+      ? { weakens: true, reason: `${c.key}: sandbox disabled` }
+      : { weakens: false, reason: '' };
+  }
+  // any other guardrail key change is conservatively a stop
+  return { weakens: true, reason: `${c.key}: guardrail-relevant change → conservative stop` };
+}
+
+/**
+ * STORY-GATE.3: classify a policy change. apply_and_log when EVERY changed key is clearly
+ * benign (the user's own config); stop when ANY changed key weakens a guardrail OR is not
+ * provably benign (conservative / fail-closed). Pure + deterministic.
+ */
+export function classifyPolicyChange(
+  before: Record<string, unknown>,
+  after: Record<string, unknown>,
+): PolicyChangeClassification {
+  const changes = diffPolicy(before, after);
+  const changedKeys = changes.map(c => c.key);
+  const reasons: string[] = [];
+
+  for (const c of changes) {
+    if (GUARDRAIL_KEY.test(c.key)) {
+      const w = weakensGuardrail(c);
+      if (w.weakens) reasons.push(w.reason);
+    } else if (BENIGN_KEY.test(c.key)) {
+      // clearly the user's own config → fine
+    } else {
+      // unknown key, not provably benign → conservative stop
+      reasons.push(`${c.key}: unrecognised policy key → conservative stop (unsure ⇒ treat as guardrail-weakening)`);
+    }
+  }
+
+  const weakens = reasons.length > 0;
+  return { decision: weakens ? 'stop' : 'apply_and_log', weakensGuardrail: weakens, changedKeys, reasons };
+}
