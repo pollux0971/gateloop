@@ -1469,3 +1469,13 @@ export {
   type ConfinementInvariantLike,
   type ConfinementGateResult,
 } from './providerConfinementGate.ts';
+
+// ── STORY-GATE.2: protective backstops run silently (ADR-025 class 3) ──────────
+export {
+  runProtectiveBackstop,
+  scanForRealSecret,
+  type BackstopKind,
+  type BackstopResult,
+  type BackstopRunners,
+  type SecretScan,
+} from './protectiveBackstops.ts';
