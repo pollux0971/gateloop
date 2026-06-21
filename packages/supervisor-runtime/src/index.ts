@@ -8,6 +8,13 @@
  */
 import * as fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import {
+  locateRelevantCode,
+  extractSymbolHints,
+  NULL_CLIENT,
+  type CodeGraphClient,
+  type RelevantCode,
+} from '@gateloop/codegraph-adapter';
 
 export type SupervisorAction =
   | 'replan' | 'call_developer' | 'validate' | 'call_debugger' | 'checkpoint'
@@ -151,6 +158,10 @@ export interface DeveloperPacketInput {
   packetId?: string;
   /** Structured outputs the developer must return. */
   outputRequired?: string[];
+  /** EPIC-CW.4 (Mode 1): codegraph-located relevant code, pre-computed by the Supervisor
+   *  (via locateRelevantCode) before dispatch. Fills relevant_files/codegraph_summary and merges
+   *  do_not_touch into required_files. Optional — absent → the packet is composed as before. */
+  codegraph?: RelevantCode;
 }
 
 export interface DeveloperTaskPacket {
@@ -178,6 +189,11 @@ export interface DeveloperTaskPacket {
   task_signals: TaskSignals;
   /** WORK 3a: complexity tier carried on the packet so the router can read it. */
   estimated_complexity?: 'trivial' | 'small' | 'medium' | 'large' | 'xlarge';
+  /** EPIC-CW.4 (Mode 1): codegraph-located files relevant to this story — the fix for the
+   *  previously-empty relevant_files context section (selection by code-relevance, not just role). */
+  relevant_files?: string[];
+  /** EPIC-CW.4: compact codegraph summary injected into the developer packet (≤200 chars). */
+  codegraph_summary?: string;
 }
 
 /** §1a: the always-present preserve-existing-behavior directive carried in every
@@ -275,7 +291,8 @@ export function composeDeveloperTaskPacket(input: DeveloperPacketInput): Develop
     required_files: {
       create: c.required_files?.create ?? [],
       update: c.required_files?.update ?? [],
-      do_not_touch: c.required_files?.do_not_touch ?? [],
+      // EPIC-CW.4: merge codegraph's blast-radius dependents into do_not_touch (deduped, sorted).
+      do_not_touch: dedupeInOrder([...(c.required_files?.do_not_touch ?? []), ...(input.codegraph?.do_not_touch ?? [])]).sort(),
     },
     validation_commands: c.validation_commands as string[],
     acceptance_criteria: c.acceptance_criteria as string[],
@@ -293,7 +310,29 @@ export function composeDeveloperTaskPacket(input: DeveloperPacketInput): Develop
     // WORK B: deterministic task signals for the router (domain + context need).
     task_signals: inferTaskSignals({ allowed_write_set: c.allowed_write_set, estimated_complexity: c.estimated_complexity }),
     ...(c.estimated_complexity !== undefined ? { estimated_complexity: c.estimated_complexity } : {}),
+    // EPIC-CW.4 (Mode 1, the context root): fill the previously-empty codegraph sections.
+    ...(input.codegraph ? { relevant_files: input.codegraph.relevant_files, codegraph_summary: input.codegraph.codegraph_summary } : {}),
   };
+}
+
+/**
+ * EPIC-CW.4 (Mode 1) — locate the story-relevant code via codegraph, then compose the developer
+ * packet with relevant_files/codegraph_summary FILLED. This is the Supervisor's pre-dispatch step:
+ * it pulls symbol hints from the story prose + takes the write-set's blast radius via the injected
+ * client (engineClient with the real engine in production; NULL_CLIENT / fixtureClient in CI), so
+ * the developer starts with the right files in context instead of rediscovering them by grep.
+ */
+export async function composeDeveloperTaskPacketWithCodegraph(
+  input: DeveloperPacketInput,
+  client: CodeGraphClient = NULL_CLIENT,
+): Promise<DeveloperTaskPacket> {
+  const c = input.contract;
+  // File-only write-set entries (skip globs/dirs the impact query can't resolve to a file).
+  const writeSetFiles = (c.allowed_write_set ?? []).filter((p) => /\.[A-Za-z0-9]+$/.test(p) && !p.includes('*'));
+  const prose = [c.objective ?? '', c.background ?? '', ...(c.expected_behavior ?? []), ...(c.acceptance_criteria ?? [])].join('\n');
+  const symbols = extractSymbolHints(prose);
+  const codegraph = await locateRelevantCode({ writeSetFiles, symbols }, client);
+  return composeDeveloperTaskPacket({ ...input, codegraph });
 }
 // ── Debugger Task Packet composition (STORY-029.4) ───────────────────────────
 // The second joint: turn a validation failure plus the failing diff into a

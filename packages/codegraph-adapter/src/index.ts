@@ -126,3 +126,61 @@ export async function computeImpactSet(
 export function summarizeForContext(result: CodeGraphResult): string {
   return result.summary;
 }
+
+// ── STORY-CW.4: locate the code relevant to a story (Mode 1, the context root) ───────
+
+/** Pull likely symbol names out of a story's prose: backtick-quoted idents + camel/PascalCase. */
+export function extractSymbolHints(text: string): string[] {
+  const out = new Set<string>();
+  for (const m of text.matchAll(/`([A-Za-z_$][\w$]*)`/g)) out.add(m[1]);
+  for (const m of text.matchAll(/\b([a-z]+[A-Z][A-Za-z0-9_$]*|[A-Z][a-z0-9]+[A-Z][A-Za-z0-9_$]*)\b/g)) out.add(m[1]);
+  return [...out];
+}
+
+export interface RelevantCodeInput {
+  /** Concrete file paths the story will touch (its write-set, files only — globs/dirs skipped). */
+  writeSetFiles: string[];
+  /** Symbol-name hints the story names (e.g. from extractSymbolHints over the objective/behaviors). */
+  symbols?: string[];
+}
+
+export interface RelevantCode {
+  /** Files relevant to the story: its own write-set + located symbol files + blast-radius dependents. */
+  relevant_files: string[];
+  /** Dependents OUTSIDE the write-set the developer must preserve (do-not-touch). */
+  do_not_touch: string[];
+  /** Compact, ≤200-char summary for the developer packet's codegraph_summary section. */
+  codegraph_summary: string;
+}
+
+/**
+ * Locate the code relevant to a story via codegraph BEFORE the Supervisor dispatches it — the
+ * fix for "context selection is by role, not code-relevance" (the empty relevant_files section).
+ * Pure over an injected `CodeGraphClient`: `symbol_lookup` for the named symbols' definitions and
+ * `impact` (blast radius) for the write-set files. With NULL_CLIENT (no engine) it degrades to the
+ * write-set itself (still non-empty), so the seam/fallback holds; with the real engine it adds the
+ * located related files + dependents. Deterministic (sorted, deduped).
+ */
+export async function locateRelevantCode(
+  input: RelevantCodeInput,
+  client: CodeGraphClient = NULL_CLIENT,
+): Promise<RelevantCode> {
+  const relevant = new Set<string>(input.writeSetFiles);
+  for (const sym of input.symbols ?? []) {
+    const r = await lookupSymbol(sym, client);
+    for (const loc of r.locations) relevant.add(loc.file);
+  }
+  const impact = input.writeSetFiles.length > 0 ? await computeImpactSet(input.writeSetFiles, client) : null;
+  const dependents = impact ? impact.impactedFiles.filter((f) => !input.writeSetFiles.includes(f)) : [];
+  for (const f of dependents) relevant.add(f);
+
+  const relevant_files = [...relevant].sort();
+  const do_not_touch = [...new Set(dependents)].sort();
+  const located = relevant_files.length - input.writeSetFiles.filter((f) => relevant.has(f)).length;
+  const summary =
+    do_not_touch.length === 0 && located <= 0
+      ? `codegraph: ${relevant_files.length} relevant file(s) (write-set; no extra related code located)`
+      : `codegraph: ${relevant_files.length} relevant file(s)` +
+        (do_not_touch.length ? `; preserve ${do_not_touch.length} dependent(s): ${do_not_touch.slice(0, 3).join(', ')}` : '');
+  return { relevant_files, do_not_touch, codegraph_summary: truncateSummary(summary) };
+}

@@ -6,6 +6,9 @@
   "exports": {
     ".": "./src/index.ts"
   },
+  "dependencies": {
+    "@gateloop/codegraph-adapter": "workspace:*"
+  },
   "scripts": {
     "test": "vitest run"
   },

@@ -5,6 +5,9 @@
     "rootDir": "src",
     "outDir": "dist"
   },
+  "references": [
+    { "path": "../codegraph-adapter" }
+  ],
   "include": [
     "src/**/*.ts"
   ],
