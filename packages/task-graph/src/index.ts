@@ -146,4 +146,4 @@ export function isDirectionSafe(direction: { direction_type: string } | null): b
 export type { SchedulerResult, SchedulerRunOptions, ParallelSchedulerOptions, IsolationPool } from './scheduler.js';
 export { runSequentialScheduler, runParallelScheduler } from './scheduler.js';
 export type { SpawnCandidate, SpawnPlan } from './spawn-plan.js';
-export { computeSpawnPlan, recordSpawnPlan } from './spawn-plan.js';
+export { computeSpawnPlan, recordSpawnPlan, applyWipCap, defaultMaxWip, computeSpawnPlanWithWip } from './spawn-plan.js';

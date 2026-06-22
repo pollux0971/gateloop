@@ -97,3 +97,39 @@ export async function recordSpawnPlan(plan: SpawnPlan, traceLogPath: string): Pr
   });
   appendJsonl(traceLogPath, e);
 }
+
+// ── STORY-SH.2: WIP cap (reuse computeSpawnPlan; add a concurrency limit) ──
+//
+// computeSpawnPlan decides WHICH stories may run in parallel (write-set-safe); it has no
+// concurrency LIMIT, so 15 parallel-safe stories spawn 15 workspaces at once. applyWipCap
+// bounds parallel_batch to maxWip and DETERMINISTICALLY (sorted by story_id) spills the
+// overflow to sequential_queue (it runs next round). Pure; the DAG / depends_on / overlap
+// detection in computeSpawnPlan is unchanged — this only limits how many of the already-
+// safe batch start at once.
+import * as os from 'node:os';
+
+/** Default WIP: min(cores-2, configured). Small by default; never below 1. */
+export function defaultMaxWip(configured = 4): number {
+  const cores = (os.cpus()?.length ?? 4);
+  return Math.max(1, Math.min(cores - 2, configured));
+}
+
+/** Cap parallel_batch to maxWip; overflow (sorted by story_id) spills to the front of
+ *  sequential_queue. Returns a new SpawnPlan; overlap_pairs are carried through unchanged. */
+export function applyWipCap(plan: SpawnPlan, maxWip: number): SpawnPlan {
+  const cap = Math.max(1, maxWip);
+  if (plan.parallel_batch.length <= cap) return plan;
+  const sorted = [...plan.parallel_batch].sort((a, b) => a.localeCompare(b));
+  const kept = sorted.slice(0, cap);
+  const overflow = sorted.slice(cap); // deterministic: the lexically-later ids wait
+  return {
+    parallel_batch: kept,
+    sequential_queue: [...overflow, ...plan.sequential_queue],
+    overlap_pairs: plan.overlap_pairs,
+  };
+}
+
+/** Convenience: compute a plan then cap it (the WIP-bounded spawn plan). */
+export function computeSpawnPlanWithWip(candidates: SpawnCandidate[], maxWip: number = defaultMaxWip()): SpawnPlan {
+  return applyWipCap(computeSpawnPlan(candidates), maxWip);
+}

@@ -315,3 +315,46 @@ describe('direction-safety', () => {
     expect(isDirectionSafe(null)).toBe(true);
   });
 });
+
+// ── STORY-SH.2: WIP cap (reuse computeSpawnPlan; deterministic overflow) ──
+import { computeSpawnPlan as _csp, applyWipCap, defaultMaxWip, computeSpawnPlanWithWip, type SpawnCandidate } from './index';
+describe('STORY-SH.2 WIP cap', () => {
+  // 5 non-overlapping parallel-safe stories → computeSpawnPlan puts all 5 in parallel_batch
+  const candidates: SpawnCandidate[] = ['e','c','a','d','b'].map(x => ({
+    story_id: `STORY-${x}`, parallelism_class: 'parallel_safe', allowed_write_set: [`pkg/${x}/**`],
+  }));
+
+  it('reuses_computeSpawnPlan_scheduler_not_rewritten + dag_depends_on_overlap_detection_unchanged', () => {
+    const plan = _csp(candidates);
+    expect(plan.parallel_batch.length).toBe(5);       // computeSpawnPlan unchanged: all 5 parallel-safe
+    expect(plan.overlap_pairs).toEqual([]);            // no overlap (distinct write-sets) — detection intact
+  });
+
+  it('parallel_batch_exceeding_maxwip_spills_to_sequential_queue', () => {
+    const capped = applyWipCap(_csp(candidates), 2);
+    expect(capped.parallel_batch.length).toBe(2);      // bounded to maxWip
+    expect(capped.sequential_queue.length).toBe(3);    // overflow queued
+    // every candidate still accounted for (nothing dropped)
+    expect([...capped.parallel_batch, ...capped.sequential_queue].sort())
+      .toEqual(candidates.map(c => c.story_id).sort());
+  });
+
+  it('overflow_deterministic_sorted_by_story_id', () => {
+    const capped = applyWipCap(_csp(candidates), 2);
+    expect(capped.parallel_batch).toEqual(['STORY-a', 'STORY-b']);          // lexically-first kept
+    expect(capped.sequential_queue.slice(0, 3)).toEqual(['STORY-c', 'STORY-d', 'STORY-e']); // rest wait, in order
+  });
+
+  it('no-op when batch already within cap', () => {
+    const plan = _csp(candidates);
+    expect(applyWipCap(plan, 10)).toBe(plan); // unchanged reference — nothing to cap
+  });
+
+  it('max_wip_default_small_min_cores_minus_2_or_configured', () => {
+    expect(defaultMaxWip(4)).toBeGreaterThanOrEqual(1);
+    expect(defaultMaxWip(4)).toBeLessThanOrEqual(4);     // never above the configured cap
+    expect(defaultMaxWip(1)).toBe(1);                    // configured floor honored
+    // convenience composes compute + cap
+    expect(computeSpawnPlanWithWip(candidates, 2).parallel_batch.length).toBe(2);
+  });
+});
