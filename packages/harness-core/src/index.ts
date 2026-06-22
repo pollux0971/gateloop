@@ -182,7 +182,10 @@ export function enforceRunBudget(budget: RunBudget): 'ok' | 'stop' {
 //      self-enable; the user pre-authorises. This is a guardrail (protects the user's money),
 //      not approval friction.
 
-export type AutoAdvanceStop = 'trust_boundary' | 'epic_complete' | 'budget_exceeded' | 'real_api_calls';
+export type AutoAdvanceStop =
+  | 'trust_boundary' | 'epic_complete' | 'budget_exceeded' | 'real_api_calls'
+  // STORY-SH.3: project-level convergence stops (diagnose-and-stop, not bare count).
+  | 'project_diverging' | 'project_stalled';
 
 export interface AutoAdvanceInput {
   /** Full backlog (for DAG-aware next-story selection). */
@@ -195,6 +198,11 @@ export interface AutoAdvanceInput {
   /** Whether the next selectable step needs real_api_calls (spend). Default: inferred from
    *  the next story's blocked_reason markers (gated / real_api_calls). Fail-closed. */
   nextStepNeedsRealApi?: boolean;
+  /** STORY-SH.3: the project convergence verdict (from assessConvergence). When `diverging`
+   *  or `stalled`, the loop stops WITH the signal as diagnosis — replacing the flat-12
+   *  hard-stop. Omitted/`converging` → the loop continues (past iteration 12 under a scaled
+   *  budget). The convergence stop, not a bare count, is the project-level decision. */
+  convergence?: ConvergenceVerdict;
 }
 
 export interface AutoAdvanceDecision {
@@ -202,12 +210,88 @@ export interface AutoAdvanceDecision {
   nextStoryId: string | null;
   /** Why the loop stopped for the human (null when advancing). */
   stopReason: AutoAdvanceStop | null;
+  /** STORY-SH.3: which signal/why for a project-convergence stop (the diagnosis). */
+  diagnosis?: string;
 }
 
 /** A story whose blocked_reason marks it as needing spend (gated / real_api_calls). */
 export function storyNeedsRealApi(story: StoryRecord | undefined): boolean {
   if (!story?.blocked_reason) return false;
   return /real_api_calls|gated|real[-_ ]?model|billed/i.test(story.blocked_reason);
+}
+
+// ── STORY-SH.3: project convergence monitor (the keystone — diagnose, don't bare-count) ──
+//
+// The story level already converges (failure-bank isSystemic / same-signature stall /
+// attempt budget). What was MISSING is a WHOLE-PROJECT progress/divergence signal: a flat
+// run_iteration_budget:12 halts a 20-story project mid-way instead of diagnosing. This pure
+// monitor reads the per-iteration history (recorded into ProjectRunState) and emits a
+// verdict from THREE signals over a sliding window of the last K iterations:
+//   1. delivery rate    — stories reaching done; zero over K → stalled
+//   2. rework rate      — escalations + Observe self-corrections + additive-gate rejections;
+//                         rising K rounds in a row → diverging
+//   3. cross-story clobber — prior stories' acceptance re-runs (RegressionRegistry) failing;
+//                         growing K rounds in a row → diverging
+// So the loop CONTINUES while converging (past iteration 12 under a scaled budget) and STOPS
+// WITH A DIAGNOSIS (which signal tripped) when diverging/stalled — not a bare count.
+
+export interface IterationMetrics {
+  iteration: number;
+  /** stories reaching `done` this iteration. */
+  delivered: number;
+  /** escalations + Observe self-corrections + additive-gate rejections this iteration. */
+  rework: number;
+  /** prior-story acceptance re-runs that FAILED this iteration (cross-story clobber). */
+  clobber: number;
+}
+
+export type ConvergenceState = 'converging' | 'stalled' | 'diverging';
+export interface ConvergenceVerdict {
+  verdict: ConvergenceState;
+  /** which signal drove the verdict — the diagnosis, not a bare count. */
+  signal: 'delivery_rate' | 'rework_rate' | 'cross_story_clobber' | 'insufficient_history';
+  reason: string;
+}
+
+export interface ConvergenceOptions { window?: number }
+
+/** A value series that strictly rises every step across the whole window (K consecutive). */
+function strictlyRising(vals: number[]): boolean {
+  return vals.length >= 2 && vals.every((v, i) => i === 0 || v > vals[i - 1]);
+}
+
+/**
+ * STORY-SH.3: assess project convergence from the iteration history. Pure + deterministic.
+ * `converging` (continue) unless: clobber or rework rises K rounds straight (`diverging`),
+ * or zero delivery across K rounds (`stalled`). Under K iterations of history → converging
+ * (insufficient evidence to stop). Returns the SIGNAL that decided — a diagnosis.
+ */
+export function assessConvergence(history: IterationMetrics[], opts: ConvergenceOptions = {}): ConvergenceVerdict {
+  const K = opts.window ?? 3;
+  if (history.length < K) {
+    return { verdict: 'converging', signal: 'insufficient_history', reason: `only ${history.length} iteration(s) (<${K}) — keep going` };
+  }
+  const recent = history.slice(-K);
+  const clobber = recent.map(m => m.clobber);
+  const rework = recent.map(m => m.rework);
+  const delivered = recent.reduce((s, m) => s + m.delivered, 0);
+  // diverging takes precedence (a worsening trend is the strongest stop signal)
+  if (strictlyRising(clobber)) {
+    return { verdict: 'diverging', signal: 'cross_story_clobber', reason: `cross-story clobber rising ${clobber.join('→')} over ${K} iterations` };
+  }
+  if (strictlyRising(rework)) {
+    return { verdict: 'diverging', signal: 'rework_rate', reason: `rework rising ${rework.join('→')} over ${K} iterations` };
+  }
+  if (delivered === 0) {
+    return { verdict: 'stalled', signal: 'delivery_rate', reason: `0 stories delivered over ${K} iterations` };
+  }
+  return { verdict: 'converging', signal: 'delivery_rate', reason: `${delivered} delivered over last ${K}; rework/clobber not rising` };
+}
+
+/** STORY-SH.3: the project-level iteration ceiling — generous, scaled to story count (≈ k·N),
+ *  NOT a flat 12. It is a backstop; the convergence monitor is the real stop. */
+export function projectIterationBudget(storyCount: number, perStory = 4): number {
+  return Math.max(storyCount, perStory * storyCount);
 }
 
 /**
@@ -220,12 +304,19 @@ export function storyNeedsRealApi(story: StoryRecord | undefined): boolean {
  * checkpoint, to choose the human-confirmation cadence.
  */
 export function decideAutoAdvance(input: AutoAdvanceInput): AutoAdvanceDecision {
-  const stop = (stopReason: AutoAdvanceStop): AutoAdvanceDecision => ({ advance: false, nextStoryId: null, stopReason });
+  const stop = (stopReason: AutoAdvanceStop, diagnosis?: string): AutoAdvanceDecision =>
+    ({ advance: false, nextStoryId: null, stopReason, ...(diagnosis ? { diagnosis } : {}) });
 
-  // 1. Budget first — never advance past the run budget.
+  // 1. Budget first — the GENEROUS project ceiling (projectIterationBudget ≈ k·N), a backstop;
+  //    the convergence monitor below is the real stop. A converging project passes this.
   if (enforceRunBudget(input.runBudget) === 'stop') return stop('budget_exceeded');
 
-  // 2. A pending trust-boundary human gate always stops (the gate faces the AGENT).
+  // 2. STORY-SH.3: project convergence — diagnose-and-stop (not a bare count). A diverging or
+  //    stalled project stops WITH the signal that tripped; a converging one continues (past 12).
+  if (input.convergence?.verdict === 'diverging') return stop('project_diverging', input.convergence.reason);
+  if (input.convergence?.verdict === 'stalled') return stop('project_stalled', input.convergence.reason);
+
+  // 3. A pending trust-boundary human gate always stops (the gate faces the AGENT).
   if (input.pendingHumanGate) return stop('trust_boundary');
 
   // 3. Pick the next runnable story (DAG-aware; same selector the loop already uses).

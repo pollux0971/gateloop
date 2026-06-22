@@ -1300,3 +1300,85 @@ describe('STORY-SH.1 persistent project cost ledger', () => {
     expect(projectBudgetVerdict({ ...emptyProjectCostLedger('t'), cumulative_usd: 1e9 }).decision).toBe('ok');
   });
 });
+
+// ── STORY-SH.3: project convergence monitor (keystone — diagnose, not bare count) ──
+import { assessConvergence, projectIterationBudget, type IterationMetrics } from './index.js';
+describe('STORY-SH.3 project convergence monitor', () => {
+  const m = (iteration: number, delivered: number, rework: number, clobber: number): IterationMetrics => ({ iteration, delivered, rework, clobber });
+
+  it('project_convergence_monitor_pure_reads_projectrunstate_history (insufficient history → keep going)', () => {
+    expect(assessConvergence([m(1,1,0,0)]).verdict).toBe('converging');
+    expect(assessConvergence([m(1,1,0,0)]).signal).toBe('insufficient_history');
+  });
+
+  it('signal_1_delivery_rate_k_rounds_zero_delivery_stalled', () => {
+    const v = assessConvergence([m(1,0,1,0), m(2,0,1,0), m(3,0,1,0)]); // 0 delivered over 3, rework flat
+    expect(v.verdict).toBe('stalled');
+    expect(v.signal).toBe('delivery_rate');
+  });
+
+  it('signal_2_rework_rate_rising_k_rounds_diverging', () => {
+    const v = assessConvergence([m(1,1,1,0), m(2,1,2,0), m(3,1,3,0)]); // rework 1→2→3 (delivering, but churning)
+    expect(v.verdict).toBe('diverging');
+    expect(v.signal).toBe('rework_rate');
+    expect(v.reason).toMatch(/1→2→3/);
+  });
+
+  it('signal_3_cross_story_clobber_worsening_diverging', () => {
+    const v = assessConvergence([m(1,1,0,1), m(2,1,0,2), m(3,1,0,4)]); // clobber 1→2→4
+    expect(v.verdict).toBe('diverging');
+    expect(v.signal).toBe('cross_story_clobber');
+  });
+
+  it('healthy project → converging (delivering, rework/clobber not rising)', () => {
+    const v = assessConvergence([m(1,2,1,0), m(2,1,0,0), m(3,2,1,0)]);
+    expect(v.verdict).toBe('converging');
+  });
+
+  it('layered_budget_per_story_plus_per_project_scaled_plus_monitor_decides', () => {
+    expect(projectIterationBudget(20)).toBe(80);   // 20 stories → ~k·N, not flat 12
+    expect(projectIterationBudget(5)).toBe(20);
+    expect(projectIterationBudget(20)).toBeGreaterThan(12); // never the flat-12 mid-project halt
+  });
+
+  it('converging_continues_past_iteration_12 (scaled budget + converging verdict → advance)', () => {
+    const stories: StoryRecord[] = [
+      makeStory({ story_id: 'STORY-P.13', epic_id: 'EPIC-P', status: 'done' }),
+      makeStory({ story_id: 'STORY-P.14', epic_id: 'EPIC-P', status: 'todo', depends_on: ['STORY-P.13'] }),
+    ];
+    const d = decideAutoAdvance({
+      stories, currentEpicId: 'EPIC-P',
+      runBudget: { iterations_used: 12, run_iteration_budget: projectIterationBudget(20) }, // 12 < 80
+      convergence: assessConvergence([m(10,2,1,0), m(11,1,0,0), m(12,2,1,0)]),               // converging
+    });
+    expect(d.advance).toBe(true);          // past iteration 12, still advancing
+    expect(d.nextStoryId).toBe('STORY-P.14');
+  });
+
+  it('diverging_stalled_diagnoses_and_stops_reports_which_signal', () => {
+    const stories: StoryRecord[] = [
+      makeStory({ story_id: 'STORY-P.1', epic_id: 'EPIC-P', status: 'done' }),
+      makeStory({ story_id: 'STORY-P.2', epic_id: 'EPIC-P', status: 'todo', depends_on: ['STORY-P.1'] }),
+    ];
+    const base = { stories, currentEpicId: 'EPIC-P', runBudget: { iterations_used: 5, run_iteration_budget: 80 } };
+    const diverging = decideAutoAdvance({ ...base, convergence: assessConvergence([m(1,1,0,1), m(2,1,0,2), m(3,1,0,3)]) });
+    expect(diverging.advance).toBe(false);
+    expect(diverging.stopReason).toBe('project_diverging');
+    expect(diverging.diagnosis).toMatch(/clobber rising/);            // reports WHICH signal — not a bare count
+    const stalled = decideAutoAdvance({ ...base, convergence: assessConvergence([m(1,0,0,0), m(2,0,0,0), m(3,0,0,0)]) });
+    expect(stalled.stopReason).toBe('project_stalled');
+    expect(stalled.diagnosis).toMatch(/0 stories delivered/);
+  });
+
+  it('decideAutoAdvance_gains_project_stalled_and_project_diverging_gate1_stops_stay', () => {
+    const stories: StoryRecord[] = [
+      makeStory({ story_id: 'STORY-P.1', epic_id: 'EPIC-P', status: 'done' }),
+      makeStory({ story_id: 'STORY-P.2', epic_id: 'EPIC-P', status: 'todo', depends_on: ['STORY-P.1'] }),
+    ];
+    // GATE.1 stops still fire (no convergence passed → existing behavior unchanged)
+    expect(decideAutoAdvance({ stories, currentEpicId: 'EPIC-P', runBudget: makeRunBudget(10,10) }).stopReason).toBe('budget_exceeded');
+    expect(decideAutoAdvance({ stories, currentEpicId: 'EPIC-P', runBudget: makeRunBudget(0,80), pendingHumanGate: 'sudo_or_irreversible' }).stopReason).toBe('trust_boundary');
+    // and a converging verdict does NOT block the GATE.1 advance
+    expect(decideAutoAdvance({ stories, currentEpicId: 'EPIC-P', runBudget: makeRunBudget(0,80), convergence: { verdict:'converging', signal:'delivery_rate', reason:'ok' } }).advance).toBe(true);
+  });
+});
