@@ -282,9 +282,12 @@ export function canRegisterSkill(m: FullSkillManifest): SkillMutationResult {
 
 export type SkillControlOp = 'toggle' | 'add' | 'delete';
 const SAFE_SKILL_OPS = new Set<string>(['toggle', 'add', 'delete']);
-/** Fields that mean the request is trying to reach BEYOND skill management → refuse. */
+/** Fields that mean the request is trying to reach BEYOND skill management → refuse.
+ *  `[._-]?` tolerates snake_case AND camelCase variants (realApiCalls, allowedTools, …).
+ *  Defense-in-depth: even a field that slips this regex is structurally inert — the
+ *  handler only ever copies skill_id/enabled and writes the catalog (never policy). */
 const OVERREACH_FIELD =
-  /policy|real_api|kill_switch|write[._-]?set|allowed_tools|default[._-]?deny|isolation|network|egress|sandbox|container|profile|promote|promotion|guardrail|bypass|sudo|secret|confinement/i;
+  /policy|real[._-]?api|kill[._-]?switch|write[._-]?set|allowed[._-]?tools|\btools\b|default[._-]?deny|isolation|network|egress|sandbox|container|profile|promote|promotion|guardrail|bypass|sudo|secret|confinement|permission/i;
 
 export interface SkillControlRequest {
   op: string;
