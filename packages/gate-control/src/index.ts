@@ -363,3 +363,18 @@ export function classifyPolicyChange(
   const weakens = reasons.length > 0;
   return { decision: weakens ? 'stop' : 'apply_and_log', weakensGuardrail: weakens, changedKeys, reasons };
 }
+
+// ── STORY-SH.1: seed a per-run BudgetLedger from the durable project cost ledger ──
+//
+// The project-level tier (harness-core ProjectRunState.cost_ledger) feeds the per-run
+// tier by SEEDING a BudgetLedger with the cumulative spend via its existing
+// `initialSpentUsd` arg — reuse, NOT a new ledger type. So a per-run BudgetLedger's
+// canStart()/remaining() already account for everything spent in prior runs against the
+// project ceiling. Structural input (no harness-core import).
+export interface ProjectCostLedgerView { cumulative_usd: number; project_budget_usd: number | null }
+
+export function seedBudgetLedgerFromProjectCost(ledger: ProjectCostLedgerView): BudgetLedger {
+  // Uncapped project → use Infinity ceiling (per-run TokenCapGuard still bounds a single run).
+  const ceiling = ledger.project_budget_usd ?? Infinity;
+  return new BudgetLedger(ceiling, ledger.cumulative_usd); // <- reuse initialSpentUsd
+}

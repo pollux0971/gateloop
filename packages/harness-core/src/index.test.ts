@@ -1251,3 +1251,52 @@ describe('STORY-GATE.1 decideAutoAdvance', () => {
     }
   });
 });
+
+// ── STORY-SH.1: persistent project cost ledger (reuse ProjectRunState + BudgetLedger) ──
+import { recordProjectCost, projectBudgetVerdict, emptyProjectCostLedger, PROJECT_RUN_STATE_SCHEMA } from './index.js';
+describe('STORY-SH.1 persistent project cost ledger', () => {
+  it('project_run_state_schema_v2_has_cost_ledger_cumulative_and_caps', () => {
+    const s = loadOrInitProjectRunState('/nonexistent/sh1-fresh.json', 'proj-SH', ['STORY-1'], 10);
+    expect(s.schema_version).toBe(PROJECT_RUN_STATE_SCHEMA); // 2
+    expect(s.cost_ledger).toBeDefined();
+    expect(s.cost_ledger).toMatchObject({ cumulative_usd: 0, cumulative_tokens: 0, project_budget_usd: null, project_token_cap: null });
+  });
+
+  it('migrates a v1 state file to v2 (adds cost_ledger, keeps data)', async () => {
+    const p = tmpPath();
+    // hand-write a v1 file (no cost_ledger)
+    const v1 = loadOrInitProjectRunState(p, 'proj-mig', ['STORY-A'], 10);
+    (v1 as any).schema_version = 1; delete (v1 as any).cost_ledger;
+    await persistProjectRunState(p, v1);
+    const migrated = loadOrInitProjectRunState(p, 'proj-mig', ['STORY-A'], 10);
+    expect(migrated.schema_version).toBe(PROJECT_RUN_STATE_SCHEMA);
+    expect(migrated.cost_ledger).toBeDefined();
+    expect(migrated.cost_ledger!.cumulative_usd).toBe(0);
+    unlinkSync(p);
+  });
+
+  it('each_run_persists_updated_cumulative (cross-run accumulation)', async () => {
+    const p = tmpPath();
+    let s = loadOrInitProjectRunState(p, 'proj-acc', ['STORY-A'], 10);
+    s.cost_ledger!.project_budget_usd = 5;
+    recordProjectCost(s, { usd: 1.5, tokens: 1000 }, '2026-06-23T00:00:00Z');
+    await persistProjectRunState(p, s);
+    // a SECOND run loads the cumulative and adds to it
+    s = loadOrInitProjectRunState(p, 'proj-acc', ['STORY-A'], 10);
+    expect(s.cost_ledger!.cumulative_usd).toBe(1.5);
+    recordProjectCost(s, { usd: 2.0, tokens: 500 }, '2026-06-23T01:00:00Z');
+    expect(s.cost_ledger!.cumulative_usd).toBe(3.5);
+    expect(s.cost_ledger!.cumulative_tokens).toBe(1500);
+    unlinkSync(p);
+  });
+
+  it('approaching_project_budget_warns_exceeding_stops', () => {
+    const base = emptyProjectCostLedger('t'); base.project_budget_usd = 10; base.project_token_cap = 1000;
+    expect(projectBudgetVerdict({ ...base, cumulative_usd: 2 }).decision).toBe('ok');
+    expect(projectBudgetVerdict({ ...base, cumulative_usd: 8.5 }).decision).toBe('warn');  // ≥80%
+    expect(projectBudgetVerdict({ ...base, cumulative_usd: 10 }).decision).toBe('stop');    // at cap
+    expect(projectBudgetVerdict({ ...base, cumulative_tokens: 1000 }).decision).toBe('stop'); // token cap
+    // uncapped never warns/stops
+    expect(projectBudgetVerdict({ ...emptyProjectCostLedger('t'), cumulative_usd: 1e9 }).decision).toBe('ok');
+  });
+});

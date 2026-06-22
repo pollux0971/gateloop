@@ -790,6 +790,24 @@ export interface ProjectStoryEntry {
   blocked_reason: string | null;
 }
 
+/**
+ * STORY-SH.1: the DURABLE project cost ledger (the project-level tier above per-run
+ * BudgetLedger / TokenCapGuard). Persisted in ProjectRunState so cumulative spend
+ * survives across many /goal runs of a 20+ story project. The numbers are seeded INTO a
+ * per-run BudgetLedger via its existing `initialSpentUsd` arg (gate-control
+ * seedBudgetLedgerFromProjectCost) — reuse, not a rebuilt ledger.
+ */
+export interface ProjectCostLedger {
+  cumulative_usd: number;
+  cumulative_tokens: number;
+  /** Project budget ceiling; null = uncapped (warn/stop disabled). */
+  project_budget_usd: number | null;
+  project_token_cap: number | null;
+  updated_at: string;
+}
+
+export const PROJECT_RUN_STATE_SCHEMA = 2; // SH.1: bumped from 1 (adds cost_ledger)
+
 export interface ProjectRunState {
   schema_version: number;
   project_id: string;
@@ -801,6 +819,46 @@ export interface ProjectRunState {
   iterations_used: number;
   run_iteration_budget: number;
   stories: ProjectStoryEntry[];
+  /** STORY-SH.1: durable cross-run cost ledger (added in schema v2). */
+  cost_ledger?: ProjectCostLedger;
+}
+
+/** STORY-SH.1: a fresh, uncapped cost ledger (caps are opt-in per project). */
+export function emptyProjectCostLedger(now: string): ProjectCostLedger {
+  return { cumulative_usd: 0, cumulative_tokens: 0, project_budget_usd: null, project_token_cap: null, updated_at: now };
+}
+
+/** STORY-SH.1: record spend into the durable ledger (cumulative across runs). Pure mutation
+ *  on the passed state; the caller persists. `now` injected for determinism. */
+export function recordProjectCost(
+  state: ProjectRunState,
+  delta: { usd?: number; tokens?: number },
+  now: string,
+): ProjectRunState {
+  if (!state.cost_ledger) state.cost_ledger = emptyProjectCostLedger(now);
+  state.cost_ledger.cumulative_usd += delta.usd ?? 0;
+  state.cost_ledger.cumulative_tokens += delta.tokens ?? 0;
+  state.cost_ledger.updated_at = now;
+  return state;
+}
+
+export interface ProjectBudgetVerdict { decision: 'ok' | 'warn' | 'stop'; reason: string }
+
+/** STORY-SH.1: project-budget verdict — stop at/over a cap, warn within `warnFraction` of it,
+ *  ok otherwise. Uncapped (null) dimensions never warn/stop. The project-level tier of the
+ *  three (per-call router P−λ / per-run TokenCapGuard / per-project this). */
+export function projectBudgetVerdict(ledger: ProjectCostLedger, warnFraction = 0.8): ProjectBudgetVerdict {
+  const checks: Array<{ used: number; cap: number | null; unit: string }> = [
+    { used: ledger.cumulative_usd, cap: ledger.project_budget_usd, unit: 'USD' },
+    { used: ledger.cumulative_tokens, cap: ledger.project_token_cap, unit: 'tokens' },
+  ];
+  let warn: string | null = null;
+  for (const c of checks) {
+    if (c.cap == null) continue;
+    if (c.used >= c.cap) return { decision: 'stop', reason: `project ${c.unit} budget reached: ${c.used} / ${c.cap}` };
+    if (c.used >= warnFraction * c.cap) warn = `project ${c.unit} budget ${Math.round((c.used / c.cap) * 100)}% used: ${c.used} / ${c.cap}`;
+  }
+  return warn ? { decision: 'warn', reason: warn } : { decision: 'ok', reason: 'within project budget' };
 }
 
 export function loadOrInitProjectRunState(
@@ -811,14 +869,19 @@ export function loadOrInitProjectRunState(
 ): ProjectRunState {
   if (existsSync(filePath)) {
     const parsed = JSON.parse(readFileSync(filePath, 'utf8')) as ProjectRunState;
-    if (parsed.schema_version !== 1) {
-      throw new Error(`ProjectRunState schema_version must be 1, got ${parsed.schema_version}`);
+    if (parsed.schema_version !== 1 && parsed.schema_version !== PROJECT_RUN_STATE_SCHEMA) {
+      throw new Error(`ProjectRunState schema_version must be 1 or ${PROJECT_RUN_STATE_SCHEMA}, got ${parsed.schema_version}`);
+    }
+    // STORY-SH.1: migrate v1 → v2 in place (add a default cost ledger, keep cumulative at 0).
+    if (parsed.schema_version === 1 || !parsed.cost_ledger) {
+      parsed.cost_ledger = emptyProjectCostLedger(parsed.updated_at ?? new Date().toISOString());
+      parsed.schema_version = PROJECT_RUN_STATE_SCHEMA;
     }
     return parsed;
   }
   const now = new Date().toISOString();
   return {
-    schema_version: 1,
+    schema_version: PROJECT_RUN_STATE_SCHEMA,
     project_id: projectId,
     run_id: now,
     created_at: now,
@@ -837,6 +900,7 @@ export function loadOrInitProjectRunState(
       last_result: null,
       blocked_reason: null,
     })),
+    cost_ledger: emptyProjectCostLedger(now),
   };
 }
 

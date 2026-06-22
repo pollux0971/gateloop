@@ -175,3 +175,20 @@ describe('STORY-GATE.3 classifyPolicyChange', () => {
     expect(diffPolicy({ a: 1 }, { a: 1 })).toEqual([]);
   });
 });
+
+// ── STORY-SH.1: seed a per-run BudgetLedger from the durable project cost ledger ──
+import { seedBudgetLedgerFromProjectCost } from './index.ts';
+describe('STORY-SH.1 seedBudgetLedgerFromProjectCost (reuse initialSpentUsd, no rebuild)', () => {
+  it('each_run_loads_cumulative_seeds_budgetledger_via_initial_spent_usd', () => {
+    // prior runs already spent $7 of a $10 project budget
+    const led = seedBudgetLedgerFromProjectCost({ cumulative_usd: 7, project_budget_usd: 10 });
+    expect(led.spent()).toBe(7);          // seeded from cumulative (initialSpentUsd)
+    expect(led.remaining()).toBe(3);      // project ceiling minus prior runs
+    expect(led.canStart(2).allowed).toBe(true);
+    expect(led.canStart(4).allowed).toBe(false); // 7+4 > 10 → refuse this run
+  });
+  it('uncapped project → Infinity ceiling (per-run TokenCapGuard still bounds a run)', () => {
+    const led = seedBudgetLedgerFromProjectCost({ cumulative_usd: 999999, project_budget_usd: null });
+    expect(led.canStart(100).allowed).toBe(true);
+  });
+});
