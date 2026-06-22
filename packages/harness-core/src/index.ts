@@ -563,6 +563,20 @@ export interface HandoffCardAcceptance {
   ratio?: string;
 }
 
+/**
+ * STORY-SH.4: a contract a story PRODUCED — the type/API surface it exported. A FACT
+ * (name + kind + path + a signature pointer), NOT reasoning — so it preserves the
+ * facts-only handoff (no how/why, no anchoring). This is what later stories must consume
+ * rather than redefine; codegraph resolves where it lives NOW (authoritative).
+ */
+export interface ProducedContract {
+  name: string;
+  kind: 'interface' | 'type' | 'class' | 'function' | 'const' | 'enum';
+  path: string;
+  /** Pointer to the signature (e.g. trace#evt / file:line) — a fact, not the reasoning. */
+  signature_ref?: string;
+}
+
 export interface HandoffCard {
   story: string;
   delivered: string[];
@@ -571,6 +585,8 @@ export interface HandoffCard {
   open_threads: string[];
   /** Pointer back to the full process in the trace (e.g. trace#evt_4821). */
   trace_ref: string;
+  /** STORY-SH.4: contracts this story produced (facts forwarded to later stories). */
+  produced_contracts?: ProducedContract[];
 }
 
 /**
@@ -584,6 +600,8 @@ export interface StoryCompletionFacts {
   acceptance: HandoffCardAcceptance;
   open_threads?: string[];
   trace_ref: string;
+  /** STORY-SH.4: contracts produced (facts). Copied to the card; reasoning still dropped. */
+  produced_contracts?: ProducedContract[];
   [k: string]: unknown;
 }
 
@@ -594,7 +612,7 @@ export const HANDOFF_CARD_FORBIDDEN_KEYS = [
   'thought', 'thoughts', 'chain_of_thought', 'how', 'process', 'approach',
 ] as const;
 
-const HANDOFF_CARD_KEYS = ['story', 'delivered', 'touched_files', 'acceptance', 'open_threads', 'trace_ref'];
+const HANDOFF_CARD_KEYS = ['story', 'delivered', 'touched_files', 'acceptance', 'open_threads', 'trace_ref', 'produced_contracts'];
 
 /**
  * STORY-031.1: build a facts-only handoff card on story completion. Only the fact
@@ -612,7 +630,39 @@ export function emitHandoffCard(facts: StoryCompletionFacts): HandoffCard {
     },
     open_threads: [...(facts.open_threads ?? [])],
     trace_ref: facts.trace_ref,
+    // STORY-SH.4: produced contracts are FACTS → copied; reasoning keys still dropped.
+    ...(facts.produced_contracts ? { produced_contracts: facts.produced_contracts.map(c => ({ ...c })) } : {}),
   };
+}
+
+// ── STORY-SH.4: forward type-contract registry (accumulate facts across stories) ──
+//
+// The registry is "what was produced" (facts from the handoff cards), persisted in
+// ProjectRunState. codegraph resolves "where it lives now" (locateContracts). Pure helpers;
+// the Supervisor accumulates on completion and queries by dependency before dispatch.
+export interface RegisteredContract extends ProducedContract { story_id: string }
+
+/** Append a story's produced contracts to the project registry (dedupe by name+path). */
+export function registerProducedContracts(
+  registry: RegisteredContract[],
+  storyId: string,
+  contracts: ProducedContract[],
+): RegisteredContract[] {
+  const next = [...registry];
+  for (const c of contracts) {
+    if (!next.some(r => r.name === c.name && r.path === c.path)) next.push({ ...c, story_id: storyId });
+  }
+  return next;
+}
+
+/** The contracts produced by the stories a story depends on — the forward contracts it
+ *  must consume (the names the Supervisor hands to codegraph to locate). */
+export function contractsFromDependencies(
+  registry: RegisteredContract[],
+  dependsOn: string[],
+): RegisteredContract[] {
+  const deps = new Set(dependsOn);
+  return registry.filter(r => deps.has(r.story_id));
 }
 
 /**
@@ -912,6 +962,9 @@ export interface ProjectRunState {
   stories: ProjectStoryEntry[];
   /** STORY-SH.1: durable cross-run cost ledger (added in schema v2). */
   cost_ledger?: ProjectCostLedger;
+  /** STORY-SH.4: forward type-contract registry — contracts produced by completed stories
+   *  (facts), accumulated across the project so later stories consume rather than redefine. */
+  contract_registry?: RegisteredContract[];
 }
 
 /** STORY-SH.1: a fresh, uncapped cost ledger (caps are opt-in per project). */

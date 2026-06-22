@@ -11,9 +11,11 @@ import { fileURLToPath } from 'node:url';
 import {
   locateRelevantCode,
   extractSymbolHints,
+  locateContracts,
   NULL_CLIENT,
   type CodeGraphClient,
   type RelevantCode,
+  type LocatedContract,
 } from '@gateloop/codegraph-adapter';
 
 export type SupervisorAction =
@@ -593,4 +595,34 @@ export function taskPacketEnvelopeErrors(packet: Record<string, unknown>, schema
     errors.push(`target_agent must be '${constAgent}'`);
   }
   return errors;
+}
+
+// ── STORY-SH.4: forward-contract context for a consuming story (the codegraph synergy) ──
+//
+// When story 18 depends on story 3, the Supervisor takes story 3's produced-contract NAMES
+// (from the harness-core registry, via contractsFromDependencies) and uses codegraph to
+// LOCATE their live definitions + usages, folding them into the consumer's context
+// (relevant_files / codegraph_summary — the EPIC-CW sections). Registry = what was produced;
+// codegraph = where it lives now (authoritative). Pure over the injected client.
+export interface ForwardContractContext {
+  /** files where the depended-on contracts live now (for relevant_files). */
+  relevant_files: string[];
+  /** compact note naming the contracts to consume (NOT redefine) + how many were located. */
+  codegraph_summary: string;
+  located: LocatedContract[];
+}
+
+export async function composeForwardContractContext(
+  contractNames: string[],
+  client: CodeGraphClient = NULL_CLIENT,
+  readScope?: string[],
+): Promise<ForwardContractContext> {
+  const located = await locateContracts(contractNames, client, readScope);
+  const relevant_files = [...new Set(located.flatMap(c => c.locations.map(l => l.file)))].sort();
+  const foundNames = located.filter(c => c.located).map(c => c.name);
+  const summary = contractNames.length === 0
+    ? 'forward contracts: none from dependencies'
+    : `forward contracts to consume (do not redefine): ${contractNames.slice(0, 6).join(', ')}` +
+      ` — codegraph located ${foundNames.length}/${contractNames.length}`;
+  return { relevant_files, codegraph_summary: summary.slice(0, 200), located };
 }

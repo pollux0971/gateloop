@@ -184,3 +184,37 @@ export async function locateRelevantCode(
         (do_not_touch.length ? `; preserve ${do_not_touch.length} dependent(s): ${do_not_touch.slice(0, 3).join(', ')}` : '');
   return { relevant_files, do_not_touch, codegraph_summary: truncateSummary(summary) };
 }
+
+// ── STORY-SH.4: locate forward contracts (registry names → where they live NOW) ──
+//
+// The forward-contract ↔ codegraph synergy. The registry (harness-core) records WHAT each
+// story produced (facts); this resolves WHERE each contract lives now — the AUTHORITATIVE
+// live definition + usages — via symbol_lookup. So story 18 gets story 3's real type
+// located, not a stale string. Pure over the injected client; with NULL_CLIENT it reports
+// each contract unlocated (the seam/fallback holds — no engine, no crash).
+
+export interface LocatedContract {
+  name: string;
+  /** true when codegraph resolved at least one definition location. */
+  located: boolean;
+  locations: SymbolLocation[];
+  summary: string;
+}
+
+export async function locateContracts(
+  names: string[],
+  client: CodeGraphClient = NULL_CLIENT,
+  readScope?: string[],
+): Promise<LocatedContract[]> {
+  const out: LocatedContract[] = [];
+  for (const name of [...new Set(names)].sort()) {
+    const r = await lookupSymbol(name, client, readScope);
+    out.push({
+      name,
+      located: r.locations.length > 0,
+      locations: r.locations,
+      summary: r.summary,
+    });
+  }
+  return out;
+}

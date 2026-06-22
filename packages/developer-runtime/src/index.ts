@@ -553,3 +553,73 @@ export function assertDeveloperObservedBeforeEmit(ctx: {
     throw new Error(`developer_emit_with_failed_preflight: proposal ${ctx.proposalId} preflight did not pass`);
   }
 }
+
+// ── STORY-SH.4: forward-contract compliance gate (extends the additive gate) ──
+//
+// The additive gate blocks DELETING an existing export. Its dual: block a later story from
+// REDEFINING / contradicting a contract an earlier story registered. A patch that exports a
+// registered contract NAME at a path different from where it was registered is a
+// redefinition (it should IMPORT the contract, not re-declare it) → rejected pre-emit.
+// Detection reuses the same exportedSymbols extractor; codegraph confirms the authoritative
+// live location and tsc (the regression gate's typecheck) backstops signature drift — NO
+// custom type checker is built here.
+
+export interface RegisteredContractRef { name: string; path: string; story_id?: string }
+export interface ContractViolation {
+  name: string;
+  redefined_in: string;
+  registered_in: string;
+  reason: string;
+}
+
+/** Normalize a path for comparison (strip leading ./, collapse slashes). */
+function normContractPath(p: string): string {
+  return p.replace(/^\.\//, '').replace(/\/+/g, '/');
+}
+
+/** Exported symbols INCLUDING type-level kinds (interface/type/enum), which contracts
+ *  often are — a superset of the additive gate's runtime-only exportedSymbols (left
+ *  untouched so additive-gate behavior is unchanged). */
+function exportedContractSymbols(src: string): Set<string> {
+  const out = new Set<string>();
+  const re = /export\s+(?:async\s+)?(?:function|const|class|let|var|interface|type|enum)\s+([A-Za-z_$][\w$]*)/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(src)) !== null) out.add(m[1]);
+  const re2 = /export\s*\{([^}]*)\}/g;
+  while ((m = re2.exec(src)) !== null) {
+    for (const part of m[1].split(',')) {
+      const name = part.trim().split(/\s+as\s+/)[0].trim();
+      if (name) out.add(name);
+    }
+  }
+  return out;
+}
+
+/**
+ * STORY-SH.4: reject edits that REDEFINE a registered forward contract. A patch that
+ * re-exports a registered contract name in a DIFFERENT file than where it is registered
+ * contradicts the forward contract (it must import it). Returns the violations (empty = ok).
+ * Pure; the same block-precedent as the additive gate.
+ */
+export function contractComplianceGate(
+  edits: ProposedEdit[],
+  registered: RegisteredContractRef[],
+): ContractViolation[] {
+  const byName = new Map(registered.map(r => [r.name, r]));
+  const violations: ContractViolation[] = [];
+  for (const e of edits) {
+    if (e.operation === 'delete' || typeof e.content !== 'string') continue;
+    for (const sym of exportedContractSymbols(e.content)) {
+      const reg = byName.get(sym);
+      if (reg && normContractPath(reg.path) !== normContractPath(e.path)) {
+        violations.push({
+          name: sym,
+          redefined_in: e.path,
+          registered_in: reg.path,
+          reason: `'${sym}' is a registered contract from ${reg.path}; redefining it in ${e.path} contradicts the forward contract — import it instead`,
+        });
+      }
+    }
+  }
+  return violations;
+}
