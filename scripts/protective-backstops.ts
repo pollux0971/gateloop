@@ -1,11 +1,13 @@
 /**
- * STORY-GATE.2 — production wiring for the silent protective backstops.
+ * STORY-GATE.2 / STORY-TRUST.3 — production wiring for the silent HYGIENE backstops.
  *
  * Provides REAL git-backed runners for runProtectiveBackstop (the silent-vs-stop logic
  * lives in @gateloop/harness-core and is unit-tested with injected fakes). The sync /
  * force-push workflow calls these so the protections run AUTOMATICALLY (no prompt) —
  * "silent ≠ removed": the bundle/verify/checkpoint genuinely execute; only the human
- * prompt is gone. A real secret caught by the pre-sync verify still STOPS (data-safety).
+ * prompt is gone. These are HYGIENE (protect the operator's own work/keys), NOT security
+ * walls (ADR-0013). The operator's own real key caught by the pre-sync verify still STOPS —
+ * data-safety hygiene (prevents an accidental leak), not a wall and not agent restriction.
  *
  * Nothing here runs at import; it is invoked explicitly by the workflow. No secrets are
  * read by this code — the secret SCAN only inspects the diff text the verify produces.

@@ -1292,6 +1292,10 @@ export async function recordResolvedSettings(
 // redaction, no secret value can reach the append-only trace. Structurally typed
 // so the gateway's BootstrapResult.registered can be passed directly without a
 // package dependency on the gateway.
+// STORY-TRUST.3 (ADR-0013): trace/log secret masking is one of the two KEPT hygiene
+// defaults — it prevents the operator's OWN keys from leaking into a committed trace or
+// screenshot. It is HYGIENE, NOT a security wall, and does NOT restrict the agent; frame
+// it as accidental-leakage prevention so no doc implies a protection that isn't claimed.
 
 export interface ProviderRegistrationRecord {
   provider_id: string;

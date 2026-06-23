@@ -18,6 +18,6 @@ Allow high developer autonomy inside disposable workspaces while preventing host
 - Workspace Manager
 - Container Runtime
 - Secret Broker
-- Trace redaction
+- Trace redaction — **hygiene, not a wall** (ADR-0013 / STORY-TRUST.3): masks the operator's own keys out of committed traces/logs (accidental-leakage prevention); it does NOT restrict the agent and is not an execution-side wall
 - Promotion Policy
 - Validators

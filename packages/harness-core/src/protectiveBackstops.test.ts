@@ -58,3 +58,41 @@ describe('STORY-GATE.2 protective backstops', () => {
     expect(scanForRealSecret('just normal text, no keys').found).toBe(false);
   });
 });
+
+// ── STORY-TRUST.3: the two hygiene defaults stay functional + labelled "hygiene, not a wall" ──
+import fsT3 from 'node:fs';
+import pathT3 from 'node:path';
+import { fileURLToPath as f3 } from 'node:url';
+
+describe('STORY-TRUST.3 hygiene defaults (force-push backup + secret masking)', () => {
+  it('force_push_pre_backup_stays_functional', () => {
+    let called = 0;
+    const r = runProtectiveBackstop('force_push_backup', { backup: () => { called++; return 'OUTER_backup.bundle'; } });
+    expect(called).toBe(1);                 // the backup STILL runs (kept functional)
+    expect(r.ran).toBe(true);
+    expect(r.stopped).toBe(false);          // hygiene runs silently, doesn't gate the decision
+  });
+
+  it('trace_log_secret_masking_stays_functional (the pre-push scan still catches a real key, ignores fakes)', () => {
+    expect(scanForRealSecret('sk-' + 'realKey1234567890abcd').found).toBe(true);     // catches a real shape
+    expect(scanForRealSecret('sk-FAKE-DO-NOT-USE-0000').found).toBe(false);          // ignores a fixture
+  });
+
+  it('both_labelled_hygiene_not_a_wall + secret_masking_framed_as_accidental_leakage_not_restricting_agent', () => {
+    const src = fsT3.readFileSync(f3(new URL('./protectiveBackstops.ts', import.meta.url)), 'utf8');
+    expect(src.toLowerCase()).toMatch(/hygiene, not a (security )?wall/);   // labelled hygiene-not-a-wall
+    expect(src.toLowerCase()).toMatch(/accidental leak|prevents an accidental/); // accidental-leakage framing
+    expect(src.toLowerCase()).toMatch(/not[\s\S]{0,10}restrict[\s\S]{0,20}agent/); // not restricting the agent
+  });
+
+  it('neither_documented_as_a_security_wall (SECRET_POLICY + 00_SECURITY_MODEL say hygiene-not-a-wall)', () => {
+    const repoRoot = f3(new URL('../../../', import.meta.url));
+    const secretPolicy = fsT3.readFileSync(pathT3.join(repoRoot, 'docs/policies/SECRET_POLICY.md'), 'utf8');
+    const secModel = fsT3.readFileSync(pathT3.join(repoRoot, 'docs/policies/00_SECURITY_MODEL.md'), 'utf8');
+    for (const doc of [secretPolicy, secModel]) {
+      expect(doc).toMatch(/ADR-0013/);
+      expect(doc.toLowerCase()).toMatch(/hygiene, not a wall/);
+      expect(doc.toLowerCase()).toMatch(/accidental.leakage|accidental leak/);
+    }
+  });
+});

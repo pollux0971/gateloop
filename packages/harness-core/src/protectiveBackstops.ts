@@ -1,15 +1,19 @@
 /**
- * STORY-GATE.2 — protective backstops run SILENTLY (ADR-025 class 3).
+ * STORY-GATE.2 / STORY-TRUST.3 — protective backstops are HYGIENE, NOT a security wall.
  *
- * A backstop that protects the USER from an accident (back up before a force-push,
- * verify before a sync, checkpoint before a promotion) does not gate the user's
- * DECISION, so it must not interrupt with a prompt. It runs automatically, logs what it
- * did, and continues.
+ * ADR-0013 (operator-trust) KEEPS exactly two hygiene defaults, and this module is where
+ * one of them lives: the **force-push pre-backup** (auto-bundle before a force-push — the
+ * existing git lesson). They protect the OPERATOR from their own accident (lose work on a
+ * bad force-push; leak your OWN key into a committed trace) — they do NOT restrict the
+ * agent and are NOT an execution-side wall. Label them honestly as "hygiene, not a wall"
+ * so no doc/comment implies a protection the system doesn't claim (leave no phantom defense).
  *
- * The one exception is itself a guardrail: if a backstop CATCHES a real danger — the
- * pre-sync secret scan finds a real key about to be pushed — it STOPS. That is
- * data-safety, not approval friction. "Silent" describes the backstop *running*; a
- * backstop *catching something* still stops.
+ * They run SILENTLY (ADR-025 class 3): a hygiene backstop doesn't gate the user's DECISION,
+ * so it must not interrupt with a prompt — it runs automatically, logs what it did, and
+ * continues. The one time it stops is pure data-safety hygiene, not a wall: if the pre-sync
+ * secret scan finds the operator's OWN real key about to be pushed, it STOPS to prevent that
+ * accidental leak (it is NOT restricting what the agent may do). "Silent" describes the
+ * backstop *running*; a hygiene backstop *catching an accident* still stops.
  *
  * Pure + deterministic: the side-effecting work (git bundle, fresh clone, checkpoint) is
  * INJECTED as runners, so the silent-vs-stop logic is provable with no git, no network.
@@ -24,7 +28,7 @@ export interface BackstopResult {
   ran: boolean;
   /** It ran without a human prompt. */
   silent: boolean;
-  /** It caught a real danger and must STOP (data-safety guardrail). */
+  /** It caught the operator's own accident and must STOP (data-safety hygiene, not a wall). */
   stopped: boolean;
   /** Why it stopped (only when stopped). */
   reason?: string;
@@ -63,7 +67,8 @@ export interface BackstopRunners {
 /**
  * Run a protective backstop. It ALWAYS executes its runner (silent ≠ removed) and
  * continues — EXCEPT `pre_sync_verify`, which additionally secret-scans its output and
- * STOPS if a real key is about to be pushed (data-safety guardrail), or if verify failed.
+ * STOPS if the operator's own real key is about to be pushed (data-safety HYGIENE, not a
+ * wall — it prevents an accidental leak, it does not restrict the agent), or if verify failed.
  */
 export function runProtectiveBackstop(kind: BackstopKind, runners: BackstopRunners): BackstopResult {
   switch (kind) {
@@ -83,7 +88,8 @@ export function runProtectiveBackstop(kind: BackstopKind, runners: BackstopRunne
       }
       const scan = scanForRealSecret(res.output ?? '');
       if (scan.found) {
-        // The backstop CAUGHT a real danger → stop. Data-safety guardrail, not a prompt.
+        // The backstop CAUGHT the operator's own key about to leak → stop. Data-safety
+        // hygiene (prevents an accidental leak), NOT a wall and NOT a prompt.
         return { kind, ran, silent: true, stopped: true, reason: `real secret about to be pushed: ${scan.sample}`, log: `auto-verify ran; secret scan HIT (${scan.sample}) → stop` };
       }
       return { kind, ran, silent: true, stopped: false, log: 'auto-verify ran; secret scan clean → continue' };
