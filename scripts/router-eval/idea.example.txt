@@ -1,0 +1,2 @@
+# Example planning idea (replace with your own in idea.txt — gitignored).
+Build a tiny CLI that converts a CSV file to a formatted Markdown table.
