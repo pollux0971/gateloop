@@ -192,3 +192,55 @@ describe('STORY-SH.1 seedBudgetLedgerFromProjectCost (reuse initialSpentUsd, no 
     expect(led.canStart(100).allowed).toBe(true);
   });
 });
+
+// ── STORY-TRUST.2: budget is a quality/cost KNOB, not a wall (ADR-0013) ──
+// The four policy controls (write-set/additive/budget/quality) are demoted to tunable,
+// removable knobs with nothing behind them. gate-control owns the BUDGET knob; this block
+// proves it is (1) tunable, (2) removable (nothing backstops), (3) logic-unchanged, and that
+// the docs/config say so (no "security wall" framing).
+import fsT from 'node:fs';
+import pathT from 'node:path';
+import { fileURLToPath as f2 } from 'node:url';
+
+describe('STORY-TRUST.2 budget knob is tunable/removable, not a wall', () => {
+  it('write_set_additive_budget_quality_logic_stays_as_knobs — budget logic still enforces at its set value', () => {
+    const led = new BudgetLedger(10, 0);
+    expect(led.canStart(4).allowed).toBe(true);          // logic unchanged: under ceiling → allowed
+    led.record(10);
+    expect(led.canStart(1).allowed).toBe(false);         // logic unchanged: at ceiling → refused
+    const cap = new TokenCapGuard(100);
+    expect(cap.record(50)).toBe(true);                   // under cap
+    expect(cap.record(60)).toBe(false);                  // crosses cap → stop (logic kept)
+  });
+
+  it('knobs_are_operator_tunable_and_removable — raise the ceiling/cap to tune; Infinity to remove', () => {
+    // tune: a higher ceiling permits what a lower one refused
+    expect(new BudgetLedger(5, 4).canStart(2).allowed).toBe(false);   // tight knob blocks
+    expect(new BudgetLedger(50, 4).canStart(2).allowed).toBe(true);   // operator raised it → allowed
+    // remove: Infinity ceiling never blocks (the operator turned the budget knob off)
+    const off = new BudgetLedger(Infinity, 1e9);
+    expect(off.canStart(1e9).allowed).toBe(true);
+  });
+
+  it('nothing_backstops_the_knobs — with the knob removed, nothing else stops the run', () => {
+    // There is no second layer: an uncapped ledger + an effectively-unbounded cap both pass.
+    const off = new BudgetLedger(Infinity, 0);
+    expect(off.canStart(Number.MAX_SAFE_INTEGER).allowed).toBe(true);
+    const cap = new TokenCapGuard(Number.MAX_SAFE_INTEGER);
+    expect(cap.record(1e15)).toBe(true);                 // nothing behind the cap catches this
+    expect(cap.allowed()).toBe(true);
+  });
+
+  it('docs_and_config_reword_to_quality_cost_knob_not_a_wall (no security-wall framing)', () => {
+    const repoRoot = f2(new URL('../../../', import.meta.url));
+    const rules = fsT.readFileSync(pathT.join(repoRoot, 'docs/architecture/12_RUNTIME_ALGORITHM_RULES.md'), 'utf8');
+    const policy = fsT.readFileSync(pathT.join(repoRoot, 'configs/policy.yaml'), 'utf8');
+    // 12 §0 states the demotion explicitly
+    expect(rules).toMatch(/ADR-0013/);
+    expect(rules.toLowerCase()).toMatch(/quality\/cost knob|not (a )?security wall|not walls/);
+    expect(rules.toLowerCase()).toMatch(/nothing backstops/);
+    // policy.yaml frames quality_bar as a knob, not a wall
+    expect(policy.toLowerCase()).toMatch(/knob/);
+    expect(policy).toMatch(/ADR-0013/);
+  });
+});

@@ -10,6 +10,27 @@ by harness" means no LLM is in the loop for that step.
 
 ---
 
+## 0. Policy knobs are quality/cost controls, not walls (ADR-0013, STORY-TRUST.2)
+
+The four policy-as-data controls below — **write-set** (§4), the **additive gate**,
+**budget** (§3, and the cost ledger), and the **quality bar** (§5) — are
+**quality/cost KNOBS, not security walls**. Under the operator-trust execution model
+(ADR-0013) the operator can **tune or remove** any of them (they are config/contract
+data, not hard-coded gates), and **nothing backstops them**: there is no sandbox or
+second enforcement layer behind a knob, so loosening or removing one means nothing
+else catches a violation. This is a **demotion of framing, not a deletion of
+mechanism** — the algorithms below still run exactly as written when the knobs are
+left at their defaults; they are simply the operator's quality/cost choice, not a
+protection the system promises.
+
+No rule in this doc may be read as a security wall around these four. The genuinely
+hard, human-only boundaries are a *different* set and are unaffected: `real_api_calls`
+(fail-closed, human-only), `sudo`/privileged ops, network escalation, secret/protected
+paths, and promotion to a stable branch. Those are not "knobs" and are not demoted
+here. (The skill test-gate was separately retired by STORY-TRUST.1 — see §9.)
+
+---
+
 ## 1. Orchestrator tick (the loop)
 
 The Orchestrator owns the loop; the Supervisor is an LLM woken only at ★ points

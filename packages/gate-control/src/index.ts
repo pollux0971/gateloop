@@ -114,8 +114,15 @@ export function isGatedAllowed(state: GateState, env: { CI?: string } = {}): Gat
   return { allowed: true, reason: 'gate open · no kill switch · not CI' };
 }
 
-/** Cumulative USD budget across runs. Refuses a new run once the ceiling is reached
- *  (or would be crossed by the run's estimate). */
+/**
+ * STORY-TRUST.2 (ADR-0013): the cumulative USD budget is a COST KNOB, not a security wall.
+ * The operator sets the ceiling and may raise it or remove it entirely (pass `Infinity` to
+ * disable — see seedBudgetLedgerFromProjectCost for the uncapped case). NOTHING backstops it:
+ * with no ceiling, nothing else catches overspend. It is a quality/cost control the operator
+ * chooses, not a protection the system promises. The logic is unchanged — only the framing.
+ *
+ * Cumulative USD budget across runs. Refuses a new run once the ceiling is reached
+ * (or would be crossed by the run's estimate). */
 export class BudgetLedger {
   private spentUsd: number;
   private ceilingUsd: number;
@@ -137,8 +144,14 @@ export class BudgetLedger {
   remaining(): number { return Math.max(0, this.ceilingUsd - this.spentUsd); }
 }
 
-/** Per-run token cap — a hard stop. Once the cap is crossed, `record` returns false
- *  and the run MUST stop making further model calls. */
+/**
+ * STORY-TRUST.2 (ADR-0013): the per-run token cap is a COST KNOB the operator tunes, not a
+ * security wall. Set it high (or wrap it so it never trips) and nothing backstops it — there
+ * is no second layer catching a runaway run. Quality/cost control, operator's choice; the
+ * mechanism (stop at the cap) is unchanged, only the framing is demoted.
+ *
+ * Per-run token cap. Once the cap is crossed, `record` returns false and the run stops
+ * making further model calls. */
 export class TokenCapGuard {
   private total = 0;
   private isKilled = false;

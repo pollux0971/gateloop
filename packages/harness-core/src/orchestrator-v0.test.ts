@@ -596,3 +596,37 @@ describe('full story lifecycle', () => {
     expect(actions.filter(a => a === 'develop_patch').length).toBe(2);
   });
 });
+
+// ── STORY-TRUST.2: attempt/run budget is a tunable cost knob, not a wall (ADR-0013) ──
+// The budget controls are quality/cost KNOBS the operator tunes or removes; nothing
+// backstops them. The stop LOGIC is unchanged — the knob value drives the outcome.
+describe('STORY-TRUST.2 attempt/run budget is a tunable/removable knob, not a wall', () => {
+  it('run_iteration_budget knob drives the stop (tunable): low → stop_run, raised → continue', () => {
+    const story = makeStory({ story_id: 'S1', status: 'todo' });
+    const tight = makeState({ stories: [story], iterations_used: 5, run_iteration_budget: 5 });
+    const d1 = decideNextAction(tight);
+    expect(d1.action).toBe('stop_run');
+    expect(d1.reason).toBe('run_budget_exhausted');
+    // operator raises the knob → no budget stop (same logic, different knob value)
+    const loose = makeState({ stories: [story], iterations_used: 5, run_iteration_budget: 100 });
+    expect(decideNextAction(loose).action).not.toBe('stop_run');
+  });
+
+  it('removable: an effectively-unbounded run budget never budget-stops (nothing backstops it)', () => {
+    const story = makeStory({ story_id: 'S1', status: 'todo' });
+    const off = makeState({ stories: [story], iterations_used: 1_000_000, run_iteration_budget: Number.MAX_SAFE_INTEGER });
+    expect(decideNextAction(off).action).not.toBe('stop_run');
+  });
+
+  it('attempt_budget knob drives escalation (tunable): tight → escalate, raised → keep going', () => {
+    const tightStory = makeStory({ story_id: 'S1', attempts: 1, attempt_budget: 1 });
+    const tight = makeState({ state: 'validate', active_story_id: 'S1', last_validation_passed: false, stories: [tightStory] });
+    const d = decideNextAction(tight);
+    expect(d.action).toBe('escalate_human');
+    expect(d.reason).toBe('attempt_budget_exceeded');
+    // operator raised attempt_budget → the same failure now routes to the debugger (logic kept)
+    const looseStory = makeStory({ story_id: 'S1', attempts: 1, attempt_budget: 5 });
+    const loose = makeState({ state: 'validate', active_story_id: 'S1', last_validation_passed: false, stories: [looseStory] });
+    expect(decideNextAction(loose).action).toBe('route_debugger');
+  });
+});

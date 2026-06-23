@@ -40,8 +40,13 @@ real_api_calls:
   ci_override: true   # when CI env var is set, gateway ignores enabled:true
 
 # STORY-021.3: quality_bar.required_checks now derived from settings.quality_bar.greenfield.
+# STORY-TRUST.2 (ADR-0013): quality_bar is a quality/cost KNOB, NOT a security wall — the
+# operator may tune or remove it, and nothing backstops it (set required_checks: [] to turn
+# it off; no second layer catches a low-quality result behind it). Demotion of framing only:
+# the quality-bar logic still runs at the defaults below. write-set, the additive gate, and
+# the budget knob are the same kind of tunable/removable knob (see 12_RUNTIME_ALGORITHM_RULES §0).
 quality_bar:
-  required_checks: [build, test, typecheck]   # default; overridden by settings
+  required_checks: [build, test, typecheck]   # default knob value; operator-tunable/removable; overridden by settings
   coverage_threshold: null
 
 competitive_debug:

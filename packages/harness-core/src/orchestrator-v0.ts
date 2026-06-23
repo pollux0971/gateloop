@@ -47,7 +47,10 @@ export interface RuntimeStory {
   priority: number;             // lower value = higher priority
   order_index: number;          // secondary tie-break within same priority
   attempts: number;             // number of develop_patch calls executed so far
-  attempt_budget: number;       // max develop_patch calls allowed
+  // STORY-TRUST.2 (ADR-0013): attempt_budget (and the run budget) are quality/cost KNOBS the
+  // operator tunes, NOT walls — raise them to keep going, lower them to stop sooner; nothing
+  // backstops them. The stop logic below is unchanged; only its framing is demoted.
+  attempt_budget: number;       // max develop_patch calls allowed (operator-tunable cost knob)
   allowed_write_set: string[];
   validation_commands: string[];
   rollback_notes: string;
