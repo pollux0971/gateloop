@@ -14,7 +14,9 @@
 
 1. **沒有 planning 專屬視覺**。現在的 `PipelineBoard.tsx` 裡的 `DagView` 畫的是 **story 依賴 DAG**，不是 planning 階段流程。它：直線無箭頭、固定 `XSTEP/YSTEP` 座標、20×120 小方塊、`fontSize:10` mono、**無轉場無動畫**——節點變動就硬跳。
 2. **設計 token 沒落地**。`theme.css` 定義了 MD3 + role 變數，但元件**到處寫死 hex**（`#18242F`、`#0D1B26`、`#5BD6C0`、`rgba(230,237,243,.34)`）、**滿版 9.5–11px JetBrains Mono**。醜的根因就是：字級過小且全 mono、色票不一致、零留白層次。
-3. **後端新能力沒有面板**。`rule_registry`（ADR-0012）、Work Mode（ADR-0014）、預設 skill codegraph/ponytail（ADR-0015）、沙箱探測（ADR-0013）目前在 cockpit 沒有對應 UI。
+3. **後端新能力沒有面板**。`rule_registry`（ADR-0012）、Work Mode（ADR-0014）、預設 skill codegraph/ponytail（ADR-0015）目前在 cockpit 沒有對應 UI。（原列於此的「沙箱探測」已移除——見下方 STORY-TRUST.4 註記與 §4.4。）
+
+> ⚠️ **STORY-TRUST.4 / ADR-0013 cascade applied（2026-06-23）**：依 `ADR/ADR-0013-no-sandbox-operator-trust.md`，執行端**沒有沙箱/egress 牆**。原 §4.4 `SandboxStatusBadge`（四項 egress 探測燈號）與 §1 對照表中的該列**已刪除**——沒有牆可證明，不放假裝有防護的徽章（leave no phantom defense）。誠實替代：cockpit 可顯示一行純狀態「**執行：直接在主機（無沙箱）**」。其餘模組（`PlanningGraph`、`RuleRegistryEditor`、`WorkModeSwitcher`、`SkillsPanel`）不受影響。
 4. **`App.tsx` 沒有 Planning 分頁**，planning 無處可看。
 
 ---
@@ -27,7 +29,7 @@
 | ADR-0012 policy-as-data rule registry | **`RuleRegistryEditor`**（§4.1） | `GET/PUT /api/rule-registry` | 新建：規則列表可視化編輯 |
 | ADR-0014 Work Mode greenfield/brownfield | **`WorkModeSwitcher`** + 全域過濾（§4.2） | `GET/PUT /api/work-mode` | 新建：模式切換；切換後 `SkillsPanel`/`PlanningGraph` 隨之過濾 |
 | ADR-0015 codegraph/ponytail 預設 skill | **`SkillsPanel`** 擴充（§4.3） | `GET /api/skills`、`POST /api/skills/control` | 擴充：依 work_mode 分組、builtin/enabled 徽章 |
-| ADR-0013 沙箱唯一邊界 | **`SandboxStatusBadge`**（§4.4） | `GET /api/sandbox/egress-proof` | 新建：四項探測即時燈號 |
+| ~~ADR-0013 沙箱唯一邊界~~ | ~~`SandboxStatusBadge`~~ | — | **已刪除（STORY-TRUST.4 / ADR-0013）**：執行端無沙箱/egress 牆，無探測可顯示。誠實替代＝一行狀態「執行：直接在主機（無沙箱）」。 |
 
 ---
 
@@ -415,31 +417,11 @@ function SkillsPanel({ skills }: { skills: SkillEntry[] }) {
 }
 ```
 
-### 4.4 `SandboxStatusBadge`（ADR-0013）
+### 4.4 ~~`SandboxStatusBadge`（ADR-0013）~~ — 已刪除（STORY-TRUST.4 / ADR-0013）
 
-把後端 `prove-egress.ts` 的四項探測結果做成四盞燈——**沙箱是唯一硬牆，這顆徽章就是那道牆「真的有效」的即時證據**。
-
-```tsx
-// proof = { allowlist_reachable, nonallowlist_blocked, direct_connect_fails, proxy_log_nonempty }
-function SandboxStatusBadge() {
-  const [p, setP] = useState<EgressProof | null>(null);
-  useEffect(() => { const f = () => fetch('/api/sandbox/egress-proof').then(r => r.json()).then(setP); f(); const t = setInterval(f, 5000); return () => clearInterval(t); }, []);
-  const checks: [string, boolean | undefined][] = [
-    ['allowlist 連得到', p?.allowlist_reachable],
-    ['非 allowlist 被擋', p?.nonallowlist_blocked],
-    ['繞 proxy 直連失敗', p?.direct_connect_fails],
-    ['proxy.log 非空', p?.proxy_log_nonempty],
-  ];
-  const all = checks.every(([, v]) => v);
-  return (
-    <div className="sb-badge" data-ok={all}>
-      <i className={`ti ${all ? 'ti-shield-check' : 'ti-shield-x'}`} aria-hidden="true" />
-      <span>{all ? '沙箱牆已證明有效' : '沙箱未驗證'}</span>
-      <ul>{checks.map(([k, v]) => <li key={k} data-ok={v}><i className={`ti ${v ? 'ti-check' : 'ti-x'}`} aria-hidden="true" />{k}</li>)}</ul>
-    </div>
-  );
-}
-```
+> 本小節（原 `SandboxStatusBadge` 四盞 egress 探測燈）已**刪除**。依 `ADR/ADR-0013-no-sandbox-operator-trust.md`，執行端**沒有沙箱/egress 牆**（cage 從未真正建起來），因此**沒有牆可證明**，也**不放**一顆宣稱「沙箱牆已證明有效」的徽章——那會是幻影防線（leave no phantom defense）。`GET /api/sandbox/egress-proof` 不需新建。
+>
+> **誠實替代（可選，一行純狀態）**：cockpit 顯示「**執行：直接在主機（無沙箱）**」，誠實標示沒有防護，而非假裝有。
 
 ---
 
@@ -451,9 +433,9 @@ function SandboxStatusBadge() {
 | F2 | `App.tsx` 新增 **Planning 分頁**；接 `usePlanningGraph` + `PlanningGraph` 元件 | 後端吐 planning trace 事件（ADR-0011） |
 | F3 | 後端事件接通後，逐條驗證動態：一句話加章節 / 讀 repo 跳進度 / 拆 backlog 長 epic-story | F2 |
 | F4 | `WorkModeSwitcher` + 全域過濾；`SkillsPanel` 三段分組 + 預設 skill 徽章 | 後端 work_mode / skills API（ADR-0014/0015） |
-| F5 | `RuleRegistryEditor`、`SandboxStatusBadge` | 後端 rule_registry / egress-proof API（ADR-0012/0013） |
+| F5 | `RuleRegistryEditor`（+ 可選：一行「執行：直接在主機（無沙箱）」狀態） | 後端 rule_registry API（ADR-0012）。~~`SandboxStatusBadge` / egress-proof API~~ 已刪除（STORY-TRUST.4 / ADR-0013）。 |
 
-> 後端需配合新增的 API：`/api/rule-registry`、`/api/work-mode`、`/api/sandbox/egress-proof`，以及 `/api/trace` 上的 planning 事件。這些列入後端 Phase 6 一起做。
+> 後端需配合新增的 API：`/api/rule-registry`、`/api/work-mode`，以及 `/api/trace` 上的 planning 事件。這些列入後端 Phase 6 一起做。（`/api/sandbox/egress-proof` 已移除——無沙箱牆。）
 
 ---
 
@@ -463,4 +445,4 @@ function SandboxStatusBadge() {
 2. **planning 流程圖的主角是「變化的那一刻」**：進度跳、章節冒。靜態管線是錯的隱喻，因為 planning 本來就是非單調、會湧現的。
 3. **主軸固定、其餘向下生長**——這個 layout 本身就在替後端哲學說話：spine 硬編碼，章節/epic/story 是長出來的資料。
 4. **能用 120 行 layout + FLIP 解決，就不拉 React Flow**——前端也守 ponytail 紀律。
-5. **沙箱那顆徽章不是裝飾，是我對「唯一硬牆真的有效」的隨時自證。**
+5. **誠實勝過裝飾（ADR-0013 / STORY-TRUST.4）**：執行端沒有沙箱牆，所以**不放**宣稱「沙箱牆有效」的徽章——那是幻影防線。若要顯示，就誠實標一行「執行：直接在主機（無沙箱）」。UI 只反映真實之物（policy 旋鈕、work mode、skill、planning），不假裝一個不存在的保護。

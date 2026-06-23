@@ -1,5 +1,7 @@
 # ADR-19 — Migrate the external builder from spawn-CLI to the Claude Agent SDK
 
+> ⚠️ **ADR-0013 (operator-trust) — no execution-side wall (STORY-TRUST.4 doc sweep).** GateLoop has **NO** sandbox / egress / isolation / container protection — that cage was never actually built. Any sandbox/egress/isolation/container text below is **SUPERSEDED design that does NOT describe a present protection** (leave no phantom defense). Execution runs **direct on the host**; the operator is fully trusted (risk level = running any local AI coding tool with auto-run). The one real, **KEPT** execution-side mechanism is the **tool-layer proposal-shaping (no Bash by construction)** — that is real and is NOT removed; it is not a wall. See `ADR/ADR-0013-no-sandbox-operator-trust.md` (reopen it only if ever exposed to untrusted multi-tenant use).
+
 > **⚠ Auth/driver axis SUPERSEDED by [ADR-20](./20_SUBSCRIPTION_BACKENDS_OPENCODE_STYLE.md).**
 > The "direct-backend vs spawn-CLI" thesis here still holds (asset judgment §4, security
 > transition §3, "設定≠生效" §3.2, spawn-CLI dead-code list §4.3 are all retained). But the

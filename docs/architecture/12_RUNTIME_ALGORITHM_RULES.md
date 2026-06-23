@@ -195,25 +195,27 @@ injected, ≤5 per turn · re-injected on the §6 cadence · `consolidated_count
 
 ---
 
-## 9. Skill-lifecycle gating
+## 9. Skill lifecycle — registration is unvalidated (test-gate RETIRED, STORY-TRUST.1)
 
 Source: `specs/skill_package.schema.json`; see `05_SKILL_RUNTIME_MODEL.md` and
 `../workflows/08_SKILL_LIFECYCLE_RUNTIME_WORKFLOW.md`.
 
+Per ADR-0013 §2 the ADR-0008 test-gate is **retired**. A skill the operator adds is
+registered **as-is, unvalidated** — no test requirement, no quarantine, no leakage-audit
+blocking. Tests / robustness / leakage are an **OPTIONAL self-check** the operator may run;
+they never gate registration. `canRegisterSkill()` permits unconditionally.
+
 ```text
 register(skill):
-  require skill.tests present
-  run skill.tests in a disposable workspace
-  require fresh_run_robustness_pass        # re-run from clean state
-  require leakage_audit_pass               # no env/secret/path leakage
-  if all pass: status = registered
-  else:        iterate one change at a time, re-test vs previous version
-               if iteration_budget exhausted: quarantine; append "AVOID:" to .memory.md
-promote_to_production(skill): HUMAN_GATE
+  status = registered            # unvalidated — operator-trust; no test/quarantine/leakage gate
+optional_self_check(skill):      # advisory only — does NOT gate the line above
+  run skill.tests / fresh-run robustness / leakage audit → report to the operator
+  (the operator may iterate one change at a time; the skill stays registered throughout)
+promote_to_production(skill): HUMAN_GATE   # a real boundary crossing, NOT the retired test-gate
 ```
 
-Rules: no tests → not registerable · registration requires pass + fresh-run + leakage
-audit · iterate one change at a time · production promotion is a human gate.
+Rules: registration is unvalidated (no tests required) · the test-runner machinery stays as
+an optional self-check, never a gate · production promotion remains a human gate.
 
 ---
 
