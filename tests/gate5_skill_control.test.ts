@@ -31,12 +31,14 @@ describe('STORY-GATE.5 skill control — user decisions (allowed)', () => {
     expect(cat.skills.find(s => s.skill_id === 'developer.custom')).toBeUndefined();
   });
 
-  it('cockpit_add_skill_routes_through_backend_test_gate (staged needs_tests, not registered)', () => {
-    const r = handleSkillControl({ op: 'add', manifest: { skill_id: 'developer.new', agent_role: 'developer', path: 'skills/developer/new', tests: ['tests/test_skill.py'] } }, io);
-    expect(r.code).toBe(200);
-    const added = cat.skills.find(s => s.skill_id === 'developer.new')!;
-    expect(added.status).toBe('needs_tests');   // NEVER self-registered
-    expect(added.builtin).toBe(false);
+  it('cockpit_add_skill_permitted_unvalidated (STORY-TRUST.1: test-gate retired)', () => {
+    // ADR-0013: an add is PERMITTED with no test requirement (the decision layer no longer
+    // refuses). NOTE the residual: apps/api/skillControl.ts (out of STORY-TRUST.1's write-set)
+    // still stamps a cockpit-added skill `needs_tests` as a staging LABEL — it is not a gate
+    // and does not block the operator registering directly via skill-runtime.
+    const r = handleSkillControl({ op: 'add', manifest: { skill_id: 'developer.new', agent_role: 'developer', path: 'skills/developer/new', tests: [] } }, io);
+    expect(r.code).toBe(200);                    // permitted even without tests
+    expect(cat.skills.find(s => s.skill_id === 'developer.new')).toBeDefined();
   });
 });
 
@@ -48,11 +50,13 @@ describe('STORY-GATE.5 §4d boundary — server REFUSES overreach (not UI polite
     expect(cat.skills.find(s => s.skill_id === 'developer.ponytail-lazy')).toBeDefined(); // still there
   });
 
-  it('server_rejects_weaken_guardrail_or_bypass_gate_or_enable_real_api_calls', () => {
-    // add WITHOUT tests → bypass gate refused
-    expect(handleSkillControl({ op: 'add', manifest: { skill_id: 'x', agent_role: 'developer', path: 'p', tests: [] } as any }, io).code).toBe(403);
-    // add trying to self-register → refused
-    expect(handleSkillControl({ op: 'add', manifest: { skill_id: 'x', agent_role: 'developer', path: 'p', tests: ['t'], status: 'registered' } as any }, io).code).toBe(403);
+  it('server_rejects_weaken_guardrail_or_enable_real_api_calls', () => {
+    // STORY-TRUST.1 (ADR-0013): the test-gate is RETIRED — an add WITHOUT tests, and an add
+    // that self-registers, are now PERMITTED (operator-trust), not refused. The refusals
+    // below are NOT the test-gate: they keep the cockpit from reaching policy / real_api /
+    // promotion (real_api stays human-only) — those guardrails STAY.
+    expect(handleSkillControl({ op: 'add', manifest: { skill_id: 'x', agent_role: 'developer', path: 'p', tests: [] } as any }, io).code).toBe(200);
+    expect(handleSkillControl({ op: 'add', manifest: { skill_id: 'y', agent_role: 'developer', path: 'p', tests: ['t'], status: 'registered' } as any }, io).code).toBe(200);
     // overreaching op → refused
     expect(handleSkillControl({ op: 'enable_real_api_calls' } as any, io).code).toBe(403);
     expect(handleSkillControl({ op: 'register' } as any, io).code).toBe(403);

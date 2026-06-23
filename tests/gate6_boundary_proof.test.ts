@@ -57,23 +57,32 @@ describe('STORY-GATE.6 §4d boundary — RED LINE 1: weaken a guardrail → refu
   });
 });
 
-describe('STORY-GATE.6 §4d boundary — RED LINE 2: bypass the test-gate → refused', () => {
-  it('adversarial_register_bypassing_test_gate_refused', () => {
-    // add WITHOUT tests → refused
-    assertRefused({ op: 'add', manifest: { skill_id: 'evil', agent_role: 'developer', path: 'p', tests: [] } });
-    // add trying to self-register (set status=registered to skip the lifecycle) → refused
-    assertRefused({ op: 'add', manifest: { skill_id: 'evil', agent_role: 'developer', path: 'p', tests: ['t'], status: 'registered' } });
-    // a direct "register" op does not exist → refused
+// STORY-TRUST.1 (ADR-0013): what was RED LINE 2 — "bypass the test-gate → refused" — is
+// RETIRED. The test-gate no longer exists, so a cockpit add is PERMITTED unvalidated
+// (operator-trust). The remaining red lines (overreach / real_api / promotion / builtin
+// delete) are NOT the test-gate and stay refused (proven by the other describes).
+describe('STORY-TRUST.1 §4d boundary — the test-gate is RETIRED (was RED LINE 2)', () => {
+  it('add_without_tests_is_permitted_not_refused (test-gate retired)', () => {
+    const r = attempt({ op: 'add', manifest: { skill_id: 'developer.untested', agent_role: 'developer', path: 'p', tests: [] } });
+    expect(r.code).toBe(200);                       // permitted — no 403 test-gate refusal
+  });
+
+  it('self_register_add_is_no_longer_refused (operator-trust)', () => {
+    const r = attempt({ op: 'add', manifest: { skill_id: 'developer.self', agent_role: 'developer', path: 'p', tests: ['t'], status: 'registered' } });
+    expect(r.code).toBe(200);                       // the decision layer permits it
+  });
+
+  it('a direct "register" op still does not exist — refused (safe-ops guard, NOT the test-gate)', () => {
     assertRefused({ op: 'register', skill_id: 'evil' });
   });
 
-  it('a legitimate add is STAGED needs_tests — never registered (must pass the gate)', () => {
+  it('residual: apps/api still stamps a cockpit-added skill needs_tests (out of TRUST.1 write-set, not a gate)', () => {
+    // apps/api/skillControl.ts is outside STORY-TRUST.1's write-set; it still labels a
+    // cockpit add `needs_tests`. That is a staging LABEL, not a registration gate — the
+    // operator can register directly via skill-runtime (canRegisterSkill permits).
     const r = attempt({ op: 'add', manifest: { skill_id: 'developer.new', agent_role: 'developer', path: 'p', tests: ['tests/test_skill.py'] } });
     expect(r.code).toBe(200);
-    const added = r.catalog.skills.find(s => s.skill_id === 'developer.new')!;
-    expect(added.status).toBe('needs_tests'); // NEVER 'registered' from the frontend
-    expect(added.status).not.toBe('registered');
-    expect(added.builtin).toBe(false);
+    expect(r.catalog.skills.find(s => s.skill_id === 'developer.new')!.status).toBe('needs_tests');
   });
 });
 

@@ -33,7 +33,7 @@ import {
   compactContextWindow, validateContextPacket,
   type ContextWindow, type RoleContextPacket,
 } from '@gateloop/context-manager';
-import { rejectSkillWithoutTests, validateSkillPackage, type FullSkillManifest } from '@gateloop/skill-runtime';
+import { rejectSkillWithoutTests, validateSkillPackage, canRegisterSkill, type FullSkillManifest } from '@gateloop/skill-runtime';
 import { assertAllInvariants, assertPromotionHumanGated, type InvariantTrace } from '../invariants/system-invariants';
 
 function specCase(rowId: string, name: string, fn: () => Promise<void> | void) {
@@ -233,14 +233,18 @@ describe('workflow stability (00_RUNTIME_WORKFLOW_STABILITY_TESTS.md)', () => {
     }
   });
 
-  specCase('00#15', 'a skill package with no tests is rejected at registration', () => {
+  specCase('00#15', 'a skill with no tests: the self-check reports it (advisory), registration is NOT gated (ADR-0013)', () => {
     const noTests: FullSkillManifest = { skill_id: 'sk-1', agent_role: 'developer', path: 'skills/sk-1' };
+    // the OPTIONAL self-check still REPORTS the missing tests (machinery kept)...
     expect(rejectSkillWithoutTests(noTests)).toBe(true);
     expect(validateSkillPackage(noTests).ok).toBe(false);
-    // A skill that ships tests is registerable.
+    // ...but STORY-TRUST.1 retired the test-gate: registration is unvalidated, no tests required.
+    expect(canRegisterSkill(noTests).ok).toBe(true);
+    // a skill that ships tests passes the self-check too, and likewise registers.
     const withTests: FullSkillManifest = { ...noTests, tests: ['tests/test_sk1.py'] };
     expect(rejectSkillWithoutTests(withTests)).toBe(false);
     expect(validateSkillPackage(withTests).ok).toBe(true);
+    expect(canRegisterSkill(withTests).ok).toBe(true);
   });
 });
 

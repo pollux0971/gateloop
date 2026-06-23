@@ -40,15 +40,33 @@ export function loadSkillManifest(skillDir: string): FullSkillManifest {
   return JSON.parse(fs.readFileSync(p, 'utf8')) as FullSkillManifest;
 }
 
-/** A skill package is structurally valid only with these fields + a non-empty tests list. */
+// ── STORY-TRUST.1 (ADR-0013 §2): the test-gate is RETIRED ──────────────────────
+//
+// Under the operator-trust model, a user's skill installs and runs UNVALIDATED.
+// `validateSkillPackage` and `rejectSkillWithoutTests` are KEPT — but only as an
+// OPTIONAL self-check the operator MAY run; they NEVER gate registration. Their
+// behaviour is unchanged (they still report whether a skill ships tests); only
+// their role changed: advisory signal, not a wall. No doc/comment may imply they
+// still block registration (leave no phantom defense). The actual registration
+// decision is `canRegisterSkill`, which now trusts the operator unconditionally.
+
+/**
+ * OPTIONAL self-check (NOT a gate): reports whether a skill package is structurally
+ * complete and ships tests. The operator MAY run this; a `false` result is advisory
+ * only and does NOT block registration (see `canRegisterSkill`).
+ */
 export function validateSkillPackage(m: FullSkillManifest): ValidationResult {
   const errors: string[] = [];
   for (const k of ['skill_id', 'agent_role'] as const) if (!m[k]) errors.push(`missing: ${k}`);
-  if (!m.tests || m.tests.length === 0) errors.push('skill has no tests/ — cannot be registered');
+  if (!m.tests || m.tests.length === 0) errors.push('skill has no tests/ (advisory self-check — does NOT block registration under ADR-0013 operator-trust)');
   return { ok: errors.length === 0, errors };
 }
 
-/** The hard gate: a skill without tests is never registerable (returns true = reject). */
+/**
+ * OPTIONAL self-check (NOT a gate): returns true when a skill ships no tests. This is
+ * advisory only — it NO LONGER rejects registration (the ADR-0008 test-gate is retired
+ * per ADR-0013). The operator may use it to decide whether to run the optional tests.
+ */
 export function rejectSkillWithoutTests(m: FullSkillManifest): boolean {
   return !m.tests || m.tests.length === 0;
 }
@@ -234,13 +252,15 @@ export function loadMountedSkillsForRole(
   });
 }
 
-// ── STORY-GATE.4: skill mutation policy (user decisions vs the test-gate guardrail) ──
+// ── STORY-GATE.4 / STORY-TRUST.1: skill mutation policy (all user decisions) ──
 //
 // ADR-025 §4c: enable/disable + delete-non-builtin are pure USER decisions (un-gated,
-// instant). Two things are NOT user-blocks but guardrails / product rules:
-//   - adding a NEW skill still goes through the lifecycle test-gate (an untested skill
-//     could steer the agent wrong — like an app store scanning before install);
-//   - a builtin skill (ponytail) can be DISABLED but never DELETED (reinstallable).
+// instant). STORY-TRUST.1 (ADR-0013 §2) RETIRES the former test-gate on *adding* a
+// skill: under operator-trust a skill the operator adds is registered AS-IS, unvalidated
+// (the operator trusts their own skills — like running any local AI coding tool). The
+// one product rule that remains is NOT a wall: a builtin skill (ponytail) can be DISABLED
+// but never DELETED, because it is reinstallable product content (a convenience, not a
+// protection). Tests for an added skill are an OPTIONAL self-check, never a gate.
 
 export interface SkillMutationResult { ok: boolean; error?: string }
 
@@ -258,15 +278,18 @@ export function canDeleteSkill(m: { builtin?: boolean; skill_id?: string }): Ski
 }
 
 /**
- * Register/add policy: a NEW skill must clear the lifecycle test-gate (have tests). This
- * is an AGENT guardrail, not a user-block — it never depends on who is asking, only on
- * whether the skill is safe to let the agent use. The full gate (tests pass + robustness +
- * leakage) lives in @gateloop/skill-tester; this is the structural precondition.
+ * STORY-TRUST.1 (ADR-0013 §2): register/add policy under operator-trust. The ADR-0008
+ * test-gate is RETIRED — a skill the operator adds is registered AS-IS, regardless of
+ * whether it ships tests. Registration is UNVALIDATED: there is NO test-gate, NO
+ * quarantine, and NO leakage-audit blocking it. `m` is accepted unconditionally.
+ *
+ * The test-runner machinery (`validateSkillPackage` / `rejectSkillWithoutTests`, and the
+ * fuller suite in @gateloop/skill-tester) is KEPT, but only as an OPTIONAL self-check the
+ * operator may run — it never gates this decision. This function always permits; it exists
+ * so callers have a single, honest registration policy and so no caller implies a
+ * validation that no longer happens (leave no phantom defense).
  */
-export function canRegisterSkill(m: FullSkillManifest): SkillMutationResult {
-  if (rejectSkillWithoutTests(m)) {
-    return { ok: false, error: 'skill has no tests/ — must pass the lifecycle test-gate before registration' };
-  }
+export function canRegisterSkill(_m: FullSkillManifest): SkillMutationResult {
   return { ok: true };
 }
 
@@ -277,8 +300,12 @@ export function canRegisterSkill(m: FullSkillManifest): SkillMutationResult {
 // server-side enforcement: the API calls it and obeys it regardless of what the UI sent.
 // It refuses (a) any request that names a guardrail/policy/real_api field, (b) any op
 // outside the safe set (e.g. "register", "enable_real_api", "weaken_writeset", "promote"),
-// (c) an add that hasn't got tests (the lifecycle test-gate must not be bypassed), and
-// (d) deleting a builtin. GATE.6 adversarially proves these refusals actually fire.
+// and (d) deleting a builtin. GATE.6 adversarially proves these refusals fire.
+// STORY-TRUST.1 (ADR-0013 §2): what was (c) — refusing an add without tests — is RETIRED.
+// Under operator-trust the cockpit may add a skill unvalidated (tests are an optional
+// self-check, never a gate). The (a)/(b)/(d) refusals are NOT the test-gate and STAY:
+// they keep the cockpit from reaching policy / real_api / promotion (un-related to
+// execution-side walls; real_api remains human-only), not from running the operator's code.
 
 export type SkillControlOp = 'toggle' | 'add' | 'delete';
 const SAFE_SKILL_OPS = new Set<string>(['toggle', 'add', 'delete']);
@@ -323,15 +350,11 @@ export function decideSkillControl(
   }
   if (req.op === 'add') {
     if (!req.manifest) return { allow: false, reason: 'add requires a manifest' };
-    // (c) the add must go through the lifecycle test-gate — never let the frontend
-    //     register a skill without tests (the structural precondition; the API then runs
-    //     the full skill-tester gate before status can become 'registered').
-    const gate = canRegisterSkill(req.manifest);
-    if (!gate.ok) return { allow: false, reason: `add refused (test-gate): ${gate.error}` };
-    if (req.manifest.status === 'registered') {
-      return { allow: false, reason: 'add cannot self-register; it must pass the lifecycle test-gate (status starts needs_tests)' };
-    }
-    return { allow: true, op: 'add', reason: 'add routed through the lifecycle test-gate' };
+    // STORY-TRUST.1 (ADR-0013 §2): the test-gate is RETIRED — a skill the operator adds is
+    // permitted AS-IS (no test requirement, no self-register refusal). canRegisterSkill now
+    // trusts the operator unconditionally; tests are an optional self-check, never a gate.
+    // The overreach guard above still refuses an add that smuggles a guardrail/policy field.
+    return { allow: true, op: 'add', reason: 'add permitted unvalidated (operator-trust; the test-gate is retired per ADR-0013)' };
   }
   // (d) delete — refuse builtin (disable instead).
   const sk = req.skill_id ? ctx.findSkill(req.skill_id) : undefined;

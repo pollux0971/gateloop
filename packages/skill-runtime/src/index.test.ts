@@ -173,7 +173,7 @@ describe('STORY-UST.2 ponytail-lazy registered developer skill', () => {
 });
 
 // ── STORY-GATE.4: enabled + builtin flags + mutation policy ──
-import { skillEnabled, setSkillEnabled, canDeleteSkill, canRegisterSkill } from './index';
+import { skillEnabled, setSkillEnabled, canDeleteSkill, canRegisterSkill, decideSkillControl } from './index';
 describe('STORY-GATE.4 enabled + builtin', () => {
   const dev = (o: Partial<FullSkillManifest>): FullSkillManifest =>
     ({ skill_id: 'developer.x', agent_role: 'developer', path: 'skills/developer/x', status: 'registered', tests: ['t'], ...o });
@@ -211,10 +211,10 @@ describe('STORY-GATE.4 enabled + builtin', () => {
     expect(canDeleteSkill({ skill_id: 'user.custom' }).ok).toBe(true);                    // undefined builtin = deletable
   });
 
-  it('add_new_skill_still_through_lifecycle_test_gate_guardrail', () => {
-    // adding a skill WITHOUT tests is refused — the test-gate is an agent guardrail, not a user-block
-    expect(canRegisterSkill(dev({ skill_id: 'user.new', tests: [] })).ok).toBe(false);
-    expect(canRegisterSkill(dev({ skill_id: 'user.new', tests: [] })).error).toMatch(/test-gate/);
+  it('add_new_skill_registers_unvalidated_operator_trust (STORY-TRUST.1: test-gate retired)', () => {
+    // ADR-0013 §2: a skill the operator adds is registered AS-IS — tests are NOT required.
+    expect(canRegisterSkill(dev({ skill_id: 'user.new', tests: [] })).ok).toBe(true);
+    expect(canRegisterSkill(dev({ skill_id: 'user.new' })).ok).toBe(true);   // tests field absent → still ok
     expect(canRegisterSkill(dev({ skill_id: 'user.new', tests: ['tests/test_skill.py'] })).ok).toBe(true);
   });
 
@@ -222,5 +222,78 @@ describe('STORY-GATE.4 enabled + builtin', () => {
     const pony = dev({ skill_id: 'developer.ponytail-lazy', builtin: true });
     expect(setSkillEnabled(pony, false).enabled).toBe(false); // disable: fine
     expect(canDeleteSkill(pony).ok).toBe(false);              // delete: refused
+  });
+});
+
+// ── STORY-TRUST.1: retire the test-gate (ADR-0013 §2 operator-trust) ──
+// The six behaviors_must_pass. Disciplined removal: the gate stops gating, the
+// self-check machinery STAYS, and the docs say exactly what now happens (no phantom
+// validation claim). The overreach guard (policy/real_api/promotion) is NOT the
+// test-gate and is asserted to STAY — this epic removes execution-side walls, not the
+// human-only real_api gate or the cockpit→policy boundary.
+describe('STORY-TRUST.1 retire the test-gate', () => {
+  const tdev = (o: Partial<FullSkillManifest>): FullSkillManifest =>
+    ({ skill_id: 'user.custom', agent_role: 'developer', path: 'skills/developer/custom', status: 'registered', ...o });
+  const noFind = { findSkill: () => undefined };
+
+  it('skill_registration_no_longer_requires_tests', () => {
+    expect(canRegisterSkill(tdev({ tests: [] })).ok).toBe(true);
+    expect(canRegisterSkill(tdev({})).ok).toBe(true);            // tests field entirely absent
+  });
+
+  it('user_skill_installs_and_runs_unvalidated', () => {
+    // an operator-registered skill with NO tests is registerable AND loads/runs (status registered)
+    const untested = tdev({ skill_id: 'user.untested' }); // no tests
+    expect(canRegisterSkill(untested).ok).toBe(true);
+    expect(selectSkillsForRole([untested], 'developer').map(s => s.skill_id)).toEqual(['user.untested']);
+  });
+
+  it('tests_are_optional_self_check_never_a_gate', () => {
+    const untested = tdev({ tests: [] });
+    // the self-check still REPORTS missing tests (advisory)...
+    expect(rejectSkillWithoutTests(untested)).toBe(true);
+    expect(validateSkillPackage(untested).ok).toBe(false);
+    // ...but it does NOT gate registration:
+    expect(canRegisterSkill(untested).ok).toBe(true);
+  });
+
+  it('no_quarantine_no_leakage_audit_blocking_registration', () => {
+    // registration is an unconditional permit — no quarantine/leakage/test-gate reason can appear
+    expect(canRegisterSkill(tdev({ tests: [] })).ok).toBe(true);
+    const d = decideSkillControl({ op: 'add', manifest: tdev({ tests: [] }) }, noFind);
+    expect(d.allow).toBe(true);                                  // permitted, not blocked
+    expect(d.reason).toMatch(/unvalidated|operator-trust/i);     // because the gate is retired
+    // canRegisterSkill carries no quarantine/leakage failure path at all
+    expect(canRegisterSkill(tdev({ tests: [] })).error).toBeUndefined();
+  });
+
+  it('test_runner_machinery_stays_as_optional_self_check_tool', () => {
+    // the functions still EXIST and still report test-presence — kept, just not gating
+    expect(typeof validateSkillPackage).toBe('function');
+    expect(typeof rejectSkillWithoutTests).toBe('function');
+    expect(rejectSkillWithoutTests(tdev({ tests: ['tests/t.py'] }))).toBe(false); // shipped tests → ok
+    expect(validateSkillPackage(tdev({ tests: ['tests/t.py'] })).ok).toBe(true);
+  });
+
+  it('cockpit add is no longer test-gated, but the overreach guard STAYS (not the test-gate)', () => {
+    expect(decideSkillControl({ op: 'add', manifest: tdev({ tests: [] }) }, noFind).allow).toBe(true);
+    // self-register is no longer refused (operator-trust)
+    expect(decideSkillControl({ op: 'add', manifest: tdev({ status: 'registered', tests: [] }) }, noFind).allow).toBe(true);
+    // smuggling a guardrail/real_api field is STILL refused — this is NOT the test-gate
+    expect(decideSkillControl({ op: 'add', manifest: tdev({ tests: [] }), real_api_calls: true }, noFind).allow).toBe(false);
+    expect(decideSkillControl({ op: 'enable_real_api_calls' }, noFind).allow).toBe(false);
+  });
+
+  it('docs_state_registration_is_unvalidated_no_phantom_validation_claim', () => {
+    const repoRoot = fileURLToPath(new URL('../../../', import.meta.url));
+    const lifecycle = fs.readFileSync(path.join(repoRoot, 'docs/workflows/08_SKILL_LIFECYCLE_RUNTIME_WORKFLOW.md'), 'utf8');
+    const model = fs.readFileSync(path.join(repoRoot, 'docs/architecture/05_SKILL_RUNTIME_MODEL.md'), 'utf8');
+    for (const doc of [lifecycle, model]) {
+      expect(doc).toMatch(/ADR-0013/);                                  // points at the new reality
+      expect(doc.toLowerCase()).toMatch(/unvalidated|optional self-check/);
+      // no phantom validation claim: must not assert tests still gate/block registration
+      expect(doc).not.toMatch(/cannot be registered/i);
+      expect(doc).not.toMatch(/must pass the lifecycle test-gate before registration/i);
+    }
   });
 });
