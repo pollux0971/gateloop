@@ -1440,8 +1440,203 @@ gotoPage=function(p){_goto(p);
       }
     }catch(e){ if(!live) badge(false); }
   }
+  // ── live wiring for the remaining pages (same IIFE; reuses API/byId/escp/badge/live) ──
+  const T = (m) => (window.toast ? window.toast(m) : 0);
+  const getJSON = (p) => fetch(API + p).then((r) => r.json());
+  const SHORT = (id) => String(id).replace(/^STORY-/, '');
+  function srcPill(pageId, source){
+    const t = document.querySelector(`#page-${pageId} .pg-title`); if(!t) return;
+    let p = t.querySelector('.src-pill');
+    if(!p){ p=document.createElement('span'); p.className='src-pill';
+      p.style.cssText='font-family:var(--mono);font-size:10px;padding:2px 8px;border-radius:999px;margin-left:8px'; t.appendChild(p); }
+    const liveS = source==='live';
+    p.style.background = liveS?'rgba(142,224,170,.14)':'rgba(255,217,138,.12)';
+    p.style.color = liveS?'var(--pass)':'var(--gate)'; p.textContent = liveS?'● live':'● sample';
+  }
+  // Shared confirm-gated human action (reuses the #confirm modal). Every action is record-only.
+  function confirmHumanAction({ title, body, confirmLabel, doPost }){
+    const m=byId('confirm'), ok=byId('cf-ok'), no=byId('cf-no'); if(!m||!ok) return;
+    byId('cf-t').textContent=title; byId('cf-p').textContent=body||''; ok.textContent=confirmLabel||'確認';
+    m.classList.add('open');
+    no.onclick=()=>m.classList.remove('open');
+    ok.onclick=async()=>{ m.classList.remove('open');
+      try{ const r=await doPost(); const t=await r.json();
+        T(`${t.recorded?'已記錄':'done'}${t.executed===false?' · 未執行（人類閘門）':''}${t.note?' · '+String(t.note).slice(0,52):''}`);
+      }catch(e){ T('action failed'); } };
+  }
+
+  async function liveConsoleMeta(){
+    try{
+      const [b,bu] = await Promise.all([getJSON('/api/backlog').catch(()=>null), getJSON('/api/budget').catch(()=>null)]);
+      if(b && Array.isArray(b.stories)){
+        const a = b.stories.find(s=>s.status==='in_progress') || b.stories.find(s=>s.status==='todo') || b.stories[0];
+        if(a){ const sid=byId('hd-sid'); if(sid) sid.textContent=a.story_id;
+          const att=byId('hd-att'); if(att && a.attempts!=null) att.textContent=String(a.attempts); }
+      }
+      if(bu){ const amt=byId('cost-amt'); if(amt) amt.textContent=`${Math.round((bu.usage?.tokens||0)/1000)}k tok · $${bu.usage?.cost??0}`;
+        const fill=byId('cost-fill'); if(fill && bu.caps?.per_run_tokens) fill.style.width=Math.min(100,Math.round((bu.usage?.tokens||0)/bu.caps.per_run_tokens*100))+'%'; }
+    }catch(e){}
+  }
+
+  async function livePipeline(){
+    let d; try{ d=await getJSON('/api/pipeline'); }catch{ return; }
+    srcPill('pipeline', d.source);
+    const UI = { 'Todo':['todo'], 'In Progress':['in_progress','debugging'], 'Validating':['validating'], 'Blocked':['blocked'], 'Done':['done'] };
+    document.querySelectorAll('#page-pipeline .lanes .lane').forEach((lane)=>{
+      const name=lane.querySelector('h4')?.textContent?.trim(); const keys=UI[name]||[];
+      lane.querySelectorAll('.scard').forEach((c)=>c.remove());
+      const items=keys.flatMap((k)=>d.lanes[k]||[]); const cap=name==='Done'?10:30;
+      items.slice(0,cap).forEach((s)=>{ const el=document.createElement('div');
+        el.className='scard'+(name==='In Progress'?' run':name==='Blocked'?' blok':name==='Done'?' done':'');
+        el.innerHTML=`<div class="sc-id">${escp(SHORT(s.story_id))}</div><div class="sc-t">${escp(s.epic_id||'')}</div>`+
+          (s.blocked_reason?`<div class="sc-why">${escp(String(s.blocked_reason).slice(0,40))}</div>`:''); lane.appendChild(el); });
+      if(items.length>cap){ const more=document.createElement('div'); more.className='scard'; more.style.opacity='.5';
+        more.innerHTML=`<div class="sc-t">+${items.length-cap} more</div>`; lane.appendChild(more); }
+    });
+    const wave=document.querySelector('#page-pipeline .wave');
+    if(wave){ const lvls=Object.keys(d.waves).map(Number).sort((a,b)=>a-b);
+      wave.innerHTML=`<span style="color:var(--faint)">WAVE 排程：</span>`+
+        lvls.slice(0,8).map((l)=>`<span class="wv${l===0?' now':''}">W${l} · ${d.waves[l].length}</span>`).join('')+
+        (lvls.length>8?`<span class="wv">+${lvls.length-8}</span>`:''); }
+    const admit=document.querySelector('#page-pipeline .admit');
+    if(admit){ admit.querySelectorAll('.admit-row').forEach((r)=>r.remove());
+      const rows=(d.admission||[]).slice(0,12);
+      if(!rows.length){ const r=document.createElement('div'); r.className='admit-row';
+        r.innerHTML=`<span class="ar-rsn" style="color:var(--faint)">無受阻 story（全部 admitted 或 done）</span>`; admit.appendChild(r); }
+      rows.forEach((a)=>{ const r=document.createElement('div'); r.className='admit-row';
+        r.innerHTML=`<span class="ar-sid">${escp(SHORT(a.story_id))}</span><span class="ar-st hold">held</span>`+
+          `<span class="ar-rsn">${escp(String(a.reason).slice(0,80))}</span><span class="ar-act">—</span>`; admit.appendChild(r); }); }
+  }
+
+  // Escalations strip on the pipeline page: each pending escalation → option buttons → decide flow.
+  async function liveEscalations(){
+    let d; try{ d=await getJSON('/api/escalations'); }catch{ return; }
+    const host=document.querySelector('#page-pipeline .pipe-wrap'); if(!host) return;
+    let box=byId('gl-escal'); if(!box){ box=document.createElement('div'); box.id='gl-escal'; box.className='admit'; box.style.marginTop='12px'; host.appendChild(box); }
+    const escs=d.escalations||[];
+    box.innerHTML=`<h3>待人類決定的 escalation（記錄決定，不自動執行）</h3>`+
+      (escs.length?'':`<div class="admit-row"><span class="ar-rsn" style="color:var(--faint)">目前無待決 escalation</span></div>`);
+    escs.forEach((e)=>{ const row=document.createElement('div'); row.className='admit-row'; row.style.flexWrap='wrap';
+      const opts=(e.options||[]).map((o)=>`<button class="pbtn" data-opt="${escp(o.option_id)}" style="padding:4px 10px;font-size:11px">${escp(o.option_id)}<small style="color:var(--faint)"> · ${escp(String(o.tradeoff||'').slice(0,30))}</small></button>`).join(' ');
+      row.innerHTML=`<span class="ar-sid">${escp(SHORT(e.story_id||''))}</span><span class="ar-st wait">${escp(e.type||'escalation')}</span>`+
+        `<span class="ar-rsn">${escp(String(e.requested_decision||e.reason||'').slice(0,90))}</span><span style="flex-basis:100%;margin-top:4px">${opts}</span>`;
+      row.querySelectorAll('button[data-opt]').forEach((btn)=>{ btn.onclick=()=>confirmHumanAction({
+        title:`escalation ${e.story_id}：選 ${btn.dataset.opt}？`, body:'記錄人類選擇；Supervisor 提議、harness 在閘門下執行——此處不自動套用。', confirmLabel:'記錄決定',
+        doPost:()=>fetch(API+'/api/escalations/'+encodeURIComponent(e.story_id)+'/decide',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({option_id:btn.dataset.opt})}) }); });
+      box.appendChild(row); });
+  }
+
+  async function liveDelivery(){
+    let d; try{ d=await getJSON('/api/checkpoints'); }catch{ return; }
+    srcPill('delivery', d.source);
+    const sect=document.querySelector('#page-delivery .dl-left .sect');
+    if(sect){ sect.querySelectorAll('.ckpt').forEach((c)=>c.remove());
+      (d.checkpoints||[]).slice(0,12).forEach((c)=>{ const el=document.createElement('div'); el.className='ckpt';
+        el.innerHTML=`<span class="cn">✓</span><div class="ci"><span class="sid">${escp(c.story_id||'')}</span><small>${escp(c.tests||'')}</small></div>`;
+        sect.appendChild(el); }); }
+    const ap=document.querySelector('#page-delivery .promo .pbtn.ap'), rb=document.querySelector('#page-delivery .promo .pbtn.rb');
+    if(ap && !ap._wired){ ap._wired=1; ap.removeAttribute('onclick');
+      ap.onclick=()=>confirmHumanAction({ title:'核准匯出 (promote)？', body:'記錄人類決定；實際 stable promotion 仍由 harness 閘門執行。', confirmLabel:'核准',
+        doPost:()=>fetch(API+'/api/promote',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({story_id:byId('hd-sid')?.textContent||'',evidence_ref:'delivery-panel'})}) }); }
+    if(rb && !rb._wired){ rb._wired=1; rb.removeAttribute('onclick');
+      rb.onclick=()=>confirmHumanAction({ title:'回滾上次 (rollback)？', body:'記錄人類決定；workspace 不受影響。', confirmLabel:'回滾',
+        doPost:()=>fetch(API+'/api/rollback',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({story_id:byId('hd-sid')?.textContent||''})}) }); }
+  }
+
+  async function liveFailureBank(){
+    let d; try{ d=await getJSON('/api/failure-bank'); }catch{ return; }
+    const sect=[...document.querySelectorAll('#page-skills .sect')].find((s)=>/Failure bank/i.test(s.querySelector('h3')?.textContent||''));
+    if(!sect) return;
+    sect.querySelectorAll('.gene').forEach((g)=>g.remove());
+    (d.genes||[]).forEach((g)=>{ const el=document.createElement('div'); el.className='gene';
+      el.innerHTML=`<span class="gid">${escp(g.gene_id||'')}</span><span class="gtx">${escp(g.signal||'')}</span><span class="rec">×${g.consolidated_count??0}</span>`+
+        `<span class="rmd"${g.remedy?'':' style="background:var(--s3);color:var(--faint)"'}>${g.remedy?'✓ '+escp(String(g.remedy).slice(0,40)):'尚無解法'}</span>`;
+      sect.appendChild(el); });
+  }
+
+  const AG_OF = { 'Developer':'developer','Debugger':'debugger','Reviewer':'reviewer','Supervisor':'supervisor','Planning':'planning_steward' };
+  async function liveApi(){
+    let models=[], routing=[], budget, gates;
+    try{ const m=await getJSON('/api/models'); models=m.models||[]; routing=m.routing||[]; }catch{ return; }
+    try{ budget=await getJSON('/api/budget'); }catch{}
+    try{ gates=await getJSON('/api/gates'); }catch{}
+    srcPill('api','live');
+    const cur={}; routing.forEach((r)=>{ cur[r.agent]=r.model; });
+    document.querySelectorAll('#page-api .route').forEach((row)=>{
+      const disp=row.querySelector('.ag')?.textContent?.trim(); const agent=AG_OF[disp]; const sel=row.querySelector('select');
+      if(!agent||!sel) return;
+      sel.innerHTML=models.map((mo)=>`<option ${cur[agent]===mo.name?'selected':''}>${escp(mo.name)}</option>`).join('');
+      if(!sel._wired){ sel._wired=1; sel.onchange=async()=>{ try{ const r=await fetch(API+'/api/routing',{method:'PUT',headers:{'content-type':'application/json'},body:JSON.stringify({agent,model:sel.value})}); const t=await r.json(); T(t.ok?`${disp} → ${sel.value}`:'routing rejected: '+(t.error||'')); }catch(e){ T('routing failed'); } }; }
+    });
+    if(budget){ const panel=document.querySelector('#page-api .sect .panel'); if(panel) panel.innerHTML=
+      `<div>per-story <b style="color:var(--text)">${Math.round((budget.caps.per_story_tokens||0)/1000)}k</b> tokens</div>`+
+      `<div>per-story <b style="color:var(--text)">${budget.caps.per_story_calls??'—'}</b> calls</div>`+
+      `<div>per-run <b style="color:var(--text)">${Math.round((budget.caps.per_run_tokens||0)/1000)}k</b> · kill switch</div>`+
+      `<div>超額 → <b style="color:var(--gate)">escalate</b></div>`; }
+    if(gates){ const rac=gates.gates.find((g)=>g.id==='real_api_calls'); const gw=document.querySelector('#page-api .gatewarn b');
+      if(gw&&rac) gw.textContent=`real_api_calls 目前${rac.enabled?'開啟':'關閉'}。`; }
+  }
+
+  async function liveSettings(){
+    let gates; try{ gates=await getJSON('/api/gates'); }catch{ return; }
+    srcPill('settings','live');
+    document.querySelectorAll('#page-settings .layer-gate .setrow.ro').forEach((row)=>{
+      const key=row.querySelector('.key')?.textContent?.trim(); const g=gates.gates.find((x)=>x.id===key);
+      if(g){ const val=row.querySelector('.val'); if(val){ val.textContent=(g.enabled?'ON':'OFF')+(g.human_only?'（human-only）':''); val.style.color=g.enabled?'var(--gate)':'var(--fail)'; } }
+    });
+  }
+
+  // Story Manager drawer ← /api/backlog (override the demo renderStories)
+  async function liveStories(){
+    let b; try{ b=await getJSON('/api/backlog'); }catch{ return; }
+    const box=byId('srows'); if(!box) return; box.innerHTML='';
+    const STAT={ todo:'todo', in_progress:'run', validating:'run', debugging:'run', blocked:'blok', escalated:'blok', checkpointed:'done', done:'done', passed:'run' };
+    (b.stories||[]).slice(0,40).forEach((s)=>{ const r=document.createElement('div'); r.className='srow';
+      r.innerHTML=`<div class="srl"><span class="sid">${escp(SHORT(s.story_id))}</span> <span class="sst ${STAT[s.status]||''}">${escp(s.status)}</span>`+
+        (s.blocked_reason?` <span class="slock" title="${escp(String(s.blocked_reason).slice(0,80))}">🔒</span>`:'')+`</div>`+
+        `<button class="hold">${s.status==='blocked'?'release':'hold'}</button>`;
+      const decision=s.status==='blocked'?'approve':'deny';
+      r.querySelector('.hold').onclick=()=>confirmHumanAction({ title:`${s.status==='blocked'?'release':'hold'} ${s.story_id}？`,
+        body:'記錄人類決定 (recorded)；Supervisor 只能提議，實際排程仍由 harness。', confirmLabel:'確認',
+        doPost:()=>fetch(API+'/api/human-gates/'+encodeURIComponent(s.story_id)+'/'+decision,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({note:'hold-toggle from Story Manager'})}) });
+      box.appendChild(r); });
+  }
+  window.renderStories = liveStories;
+
+  // Planning intake → POST /api/idea-intake (real classify + injection guard; demo flow is the offline fallback)
+  function wirePlanningIntake(){
+    const send=byId('ps-send'), inp=byId('ps-inp'); if(!send||!inp||send._wired) return; send._wired=1;
+    const submit=async()=>{ const idea=inp.value.trim(); if(!idea) return; inp.value='';
+      const mode=document.querySelector('#md-bf.on')?'brownfield':'greenfield';
+      const stream=byId('ps-stream');
+      if(stream){ const me=document.createElement('div'); me.className='ps-msg me'; me.innerHTML=`<div class="lbl">you</div><div class="b">${escp(idea)}</div>`; stream.appendChild(me); }
+      try{ const r=await fetch(API+'/api/idea-intake',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({idea,mode})}); const t=await r.json();
+        if(stream){ const reply=document.createElement('div'); reply.className='ps-msg ps-b';
+          if(t.injection_flag){ reply.innerHTML=`<div class="lbl">Planning Steward</div><div class="b">⚠ 偵測到 prompt-injection，已拒絕此 idea（leave no phantom）。</div>`; }
+          else { const qs=(t.questions||[]).map((q)=>`<button class="gopt" style="margin-top:6px"><div class="gt"><b>${escp(q.text)}</b>${q.options?`<small>${q.options.map(escp).join(' · ')}</small>`:''}</div></button>`).join('');
+            reply.innerHTML=`<div class="lbl">Planning Steward · classified: <b>${escp(t.classified)}</b></div><div class="b">釐清歧義：<div class="guide">${qs}</div></div>`; }
+          stream.appendChild(reply); stream.scrollTop=stream.scrollHeight; }
+      }catch(e){ T('idea-intake failed'); } };
+    send.onclick=submit; inp.onkeydown=(e)=>{ if(e.key==='Enter') submit(); };
+  }
+
+  // gotoPage hook: lazy-load each page's live data on navigation (wraps the demo's gotoPage)
+  const _goto=window.gotoPage;
+  window.gotoPage=function(p){ if(_goto) _goto(p);
+    if(p==='pipeline'){ livePipeline(); liveEscalations(); }
+    else if(p==='delivery') liveDelivery();
+    else if(p==='api') liveApi();
+    else if(p==='settings') liveSettings();
+    else if(p==='skills') liveFailureBank();
+    else if(p==='planning') wirePlanningIntake();
+  };
+
   // Go live ASAP; refresh at 1.5s to overwrite the demo's load burst; then steady poll.
-  window.addEventListener('load',()=>{ poll(); setTimeout(poll,1500); setInterval(poll,4000); });
+  window.addEventListener('load',()=>{
+    poll(); setTimeout(poll,1500); setInterval(poll,4000);
+    setTimeout(()=>{ liveConsoleMeta(); wirePlanningIntake(); }, 800);
+    setInterval(liveConsoleMeta, 5000);
+  });
 })();
 </script>
 </body>

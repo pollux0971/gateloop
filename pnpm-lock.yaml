@@ -123,6 +123,9 @@ importers:
 
   apps/api:
     dependencies:
+      '@gateloop/planning-steward':
+        specifier: workspace:*
+        version: link:../../packages/planning-steward
       '@gateloop/skill-runtime':
         specifier: workspace:*
         version: link:../../packages/skill-runtime

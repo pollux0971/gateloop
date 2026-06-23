@@ -1,0 +1,9 @@
+{
+  "sample": true,
+  "note": "Sample reviewer diagnosis directions (offline; produced live by reviewer-runtime during a real run).",
+  "directions": [
+    { "story_id": "STORY-009.3", "rank": 1, "text": "未答歧義回傳 blocked 並掛 escalation(006.2)，與既有 schema 對齊", "priority": "high", "confidence": 0.95 },
+    { "story_id": "STORY-009.3", "rank": 2, "text": "補 bundleGate 的 prose-acceptance 偵測單元測試", "priority": "med", "confidence": 0.73 }
+  ],
+  "do_not_touch": ["006.1 gate 的 prose 偵測（已通過）", "cli.ts arg parser"]
+}

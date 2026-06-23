@@ -1,0 +1,8 @@
+{
+  "sample": true,
+  "checkpoints": [
+    { "story_id": "STORY-009.3", "tests": "13/13", "at": "2026-06-11T00:00:00Z", "branch": null },
+    { "story_id": "STORY-010.1", "tests": "8/8", "at": "2026-06-11T00:00:00Z", "branch": null },
+    { "story_id": "STORY-025.1", "tests": "green", "at": "2026-06-21T00:00:00Z", "branch": null }
+  ]
+}

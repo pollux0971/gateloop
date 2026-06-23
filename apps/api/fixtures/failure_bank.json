@@ -1,0 +1,12 @@
+{
+  "sample": true,
+  "note": "Sample failure genes (offline; no live bank store). Governance numbers come live from configs/failure_bank.yaml.",
+  "genes": [
+    { "gene_id": "GENE-0042", "signal": "test|flaky|retry", "consolidated_count": 4, "severity": "warning",
+      "avoid": "勿在 CI 重跑超過 2 次——曾掩蓋真實 race condition", "remedy": "isolate the shared fixture; await the async write before assert" },
+    { "gene_id": "GENE-0038", "signal": "typecheck|import|cycle", "consolidated_count": 2, "severity": "warning",
+      "avoid": "勿用 barrel re-export 串到會造成 import cycle 的 package", "remedy": "import the concrete module path, not the index barrel" },
+    { "gene_id": "GENE-0051", "signal": "write-set|escape|out_of_set", "consolidated_count": 1, "severity": "info",
+      "avoid": "patch 越界寫入即整包作廢——先 escalate 擴 write-set", "remedy": null }
+  ]
+}

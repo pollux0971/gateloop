@@ -6,9 +6,20 @@ import { readModels, readRouting, routingRows, applyRoutingUpdate, readRouterCon
 import { loadProviderModeTrace } from './providerModeTrace';
 import { handleSkillControl, type SkillCatalog } from './skillControl';
 import type { SkillControlRequest } from '@gateloop/skill-runtime';
+import {
+  readGates, readBacklog, derivePipeline, readCheckpoints, readBudget,
+  readQualityBar, readFailureBank, readHumanGates, readReviewerDirections, type CockpitCtx,
+} from './cockpit';
+import {
+  decideEscalation, decideHumanGate, recordPromotion, ideaIntake,
+  type HumanActionIO, type DecisionRecord,
+} from './humanActions';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(__dirname, '../../..');            // gateloop/
+const BUILDER = path.resolve(REPO, '..', 'builder');         // sibling of gateloop/ — tracker lives here
+const FIXTURES = path.join(__dirname, '..', 'fixtures');
+const COCKPIT: CockpitCtx = { repo: REPO, builder: BUILDER, fixtures: FIXTURES };
 const read = (p: string) => JSON.parse(fs.readFileSync(path.join(REPO, p), 'utf8'));
 const readFixture = (p: string) => JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'fixtures', p), 'utf8'));
 
@@ -150,6 +161,53 @@ app.put('/api/router-config', async (req: any, reply) => {
 app.get('/api/provider-mode-run/:runId/trace', async (req: any, reply) => {
   const t = loadProviderModeTrace(String(req.params.runId));
   return t ? t : reply.code(404).send({ error: 'provider-mode run not found' });
+});
+
+// ── Cockpit READ endpoints (make every console page live; each returns source:'live'|'sample') ──
+// Read-only over live configs + the sibling builder/ tracker + api fixtures. The 4 global gates
+// are DISPLAY-ONLY here — there is no toggle path (EPIC-GATE server boundary; real_api_calls human-only).
+app.get('/api/gates', async () => readGates(COCKPIT));
+app.get('/api/backlog', async () => readBacklog(COCKPIT));
+app.get('/api/pipeline', async () => derivePipeline(COCKPIT));
+app.get('/api/checkpoints', async () => readCheckpoints(COCKPIT));
+app.get('/api/budget', async () => readBudget(COCKPIT));
+app.get('/api/quality-bar', async () => readQualityBar(COCKPIT));
+app.get('/api/failure-bank', async () => readFailureBank(COCKPIT));
+app.get('/api/human-gates', async () => readHumanGates(COCKPIT));
+app.get('/api/reviewer-directions', async (req: any) => readReviewerDirections(COCKPIT, req.query?.story_id));
+
+// ── Cockpit human-action endpoints (record-only; executed:false; never crosses a trust boundary) ──
+// Each records the operator's decision to an append-only log; the dangerous op (promotion, spend,
+// scope-widening, gate flips) stays owned by the harness gates. No path writes policy.yaml.
+const DECISIONS = path.join(FIXTURES, 'human_decisions.json');
+const readDecisionsFile = (): { decisions: DecisionRecord[] } => {
+  try { return JSON.parse(fs.readFileSync(DECISIONS, 'utf8')); } catch { return { decisions: [] }; }
+};
+const humanIO: HumanActionIO = {
+  readDecisions: readDecisionsFile,
+  appendDecision: (d) => {
+    const cur = readDecisionsFile(); cur.decisions = cur.decisions ?? []; cur.decisions.push(d);
+    fs.writeFileSync(DECISIONS, JSON.stringify(cur, null, 2) + '\n');
+  },
+  readEscalations: () => readFixture('escalations.json'),
+};
+app.post('/api/escalations/:id/decide', async (req: any, reply) => {
+  const r = decideEscalation(String(req.params.id), (req.body ?? {}), humanIO); return reply.code(r.code).send(r.body);
+});
+app.post('/api/human-gates/:id/approve', async (req: any, reply) => {
+  const r = decideHumanGate(String(req.params.id), 'approve', (req.body ?? {}), humanIO); return reply.code(r.code).send(r.body);
+});
+app.post('/api/human-gates/:id/deny', async (req: any, reply) => {
+  const r = decideHumanGate(String(req.params.id), 'deny', (req.body ?? {}), humanIO); return reply.code(r.code).send(r.body);
+});
+app.post('/api/promote', async (req: any, reply) => {
+  const r = recordPromotion('promote', (req.body ?? {}), humanIO); return reply.code(r.code).send(r.body);
+});
+app.post('/api/rollback', async (req: any, reply) => {
+  const r = recordPromotion('rollback', (req.body ?? {}), humanIO); return reply.code(r.code).send(r.body);
+});
+app.post('/api/idea-intake', async (req: any, reply) => {
+  const r = ideaIntake((req.body ?? {}), humanIO); return reply.code(r.code).send(r.body);
 });
 
 app.listen({ port: 8787, host: '127.0.0.1' }).catch(err => { app.log.error(err); process.exit(1); });

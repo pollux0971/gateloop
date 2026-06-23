@@ -1,0 +1,5 @@
+{
+  "sample": true,
+  "note": "Offline: no real usage meter. Sample usage for the cockpit cost bar. Caps come live from configs/settings.yaml.",
+  "usage": { "tokens": 173000, "cost": 0.78, "calls": 41 }
+}

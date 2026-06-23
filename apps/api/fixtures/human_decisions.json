@@ -1,0 +1,4 @@
+{
+  "note": "Append-only log of human decisions recorded via the cockpit (escalation-decide / gate approve-deny / promote-rollback / idea-intake). Recording only — the dangerous op itself stays harness-gated; entries never set executed:true.",
+  "decisions": []
+}

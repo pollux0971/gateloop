@@ -1,0 +1,21 @@
+{
+  "sample": true,
+  "gates": [
+    {
+      "id": "gate-promote-009.3",
+      "kind": "promotion",
+      "story_id": "STORY-009.3",
+      "summary": "STORY-009.3 checkpointed; ready to promote to stable",
+      "evidence": ["validator: 13/13 green", "write-set clean", "rollback notes present"],
+      "requested_decision": "Promote STORY-009.3 to the stable branch?"
+    },
+    {
+      "id": "gate-merge-010.1",
+      "kind": "merge",
+      "story_id": "STORY-010.1",
+      "summary": "Greenfield bootstrap checkpoint awaiting human merge",
+      "evidence": ["8/8 acceptance behaviors", "typecheck 0"],
+      "requested_decision": "Merge STORY-010.1 into main?"
+    }
+  ]
+}
