@@ -1,0 +1,5 @@
+# Real eval inputs/outputs are operator/run-specific — never commit.
+idea.txt
+fixed-plan.json
+ROUTER_EFFICIENCY_REPORT.md
+verify-routing.ts
