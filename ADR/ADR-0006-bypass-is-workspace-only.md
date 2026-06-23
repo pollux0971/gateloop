@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted for planning.
+Accepted for planning. · **Amended by ADR-0013 (2026-06-23, STORY-TRUST.6)** — reframed: under the operator-trust model there is **NO execution-side sandbox wall**. "Workspace-first" is **KEPT** as a workflow convention (changes land in a disposable workspace for review/rollback), **not** as a security boundary. Amended, **not** superseded, because the workspace-first workflow stays. See `ADR/ADR-0013-no-sandbox-operator-trust.md`.
 
 ## Context
 

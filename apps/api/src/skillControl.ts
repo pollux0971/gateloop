@@ -32,8 +32,9 @@ export interface HandlerResult { code: number; body: unknown }
 /**
  * Handle a cockpit skill-control request. Returns an HTTP-shaped {code, body}.
  *   - 200: the user decision was applied (toggle / delete-non-builtin) or the add was
- *          staged for the lifecycle test-gate (status=needs_tests — never self-registered).
- *   - 403: the §4d boundary refused it (overreach / forbidden op / bypass gate / builtin delete).
+ *          registered ACTIVE (STORY-TRUST.6 / ADR-0013: the test-gate is retired — a skill
+ *          the operator adds is registered as-is, unvalidated; no needs_tests staging).
+ *   - 403: the §4d boundary refused it (overreach / forbidden op / builtin delete).
  *   - 404: skill not found.
  */
 export function handleSkillControl(req: SkillControlRequest, io: SkillCatalogIO): HandlerResult {
@@ -62,15 +63,19 @@ export function handleSkillControl(req: SkillControlRequest, io: SkillCatalogIO)
     }
     case 'add': {
       const m = req.manifest!;
-      // Stage for the test-gate: registered status is NEVER granted here — it must be
-      // earned by the lifecycle gate (skill-tester). The frontend cannot self-register.
-      const staged: SkillCatalogEntry = {
+      // STORY-TRUST.6 (ADR-0013): the test-gate is RETIRED — a skill the operator adds is
+      // registered ACTIVE (status:'registered'), unvalidated. No `needs_tests` stamp (which
+      // would bench it: skill-runtime's selectSkillsForRole excludes non-'registered'); no
+      // test-gate note. The engine is UNCHANGED — registering active here simply means the
+      // runtime's needs_tests exclusion never triggers on the API path. Tests are an optional
+      // self-check, not a gate (the operator trusts their own skills).
+      const added: SkillCatalogEntry = {
         skill_id: m.skill_id, agent_role: m.agent_role, path: m.path,
-        status: 'needs_tests', enabled: true, builtin: false,
+        status: 'registered', enabled: true, builtin: false,
       };
-      catalog.skills.push(staged);
+      catalog.skills.push(added);
       io.write(catalog);
-      return { code: 200, body: { staged: m.skill_id, status: 'needs_tests', note: 'must pass the lifecycle test-gate to register' } };
+      return { code: 200, body: { added: m.skill_id, status: 'registered', note: 'registered unvalidated (operator-trust; tests are an optional self-check, not a gate)' } };
     }
     default:
       return { code: 403, body: { error: 'unhandled op', boundary: 'server-enforced' } };

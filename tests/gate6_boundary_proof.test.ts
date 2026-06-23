@@ -76,13 +76,14 @@ describe('STORY-TRUST.1 §4d boundary — the test-gate is RETIRED (was RED LINE
     assertRefused({ op: 'register', skill_id: 'evil' });
   });
 
-  it('residual: apps/api still stamps a cockpit-added skill needs_tests (out of TRUST.1 write-set, not a gate)', () => {
-    // apps/api/skillControl.ts is outside STORY-TRUST.1's write-set; it still labels a
-    // cockpit add `needs_tests`. That is a staging LABEL, not a registration gate — the
-    // operator can register directly via skill-runtime (canRegisterSkill permits).
+  it('STORY-TRUST.6: a cockpit-added skill is registered ACTIVE, not benched as needs_tests', () => {
+    // The TRUST.1 residual is fixed: apps/api no longer stamps `needs_tests` (which would
+    // bench the skill via selectSkillsForRole) and no longer emits a test-gate note. The skill
+    // is registered active, unvalidated (operator-trust) — the test-gate is dead on this path too.
     const r = attempt({ op: 'add', manifest: { skill_id: 'developer.new', agent_role: 'developer', path: 'p', tests: ['tests/test_skill.py'] } });
     expect(r.code).toBe(200);
-    expect(r.catalog.skills.find(s => s.skill_id === 'developer.new')!.status).toBe('needs_tests');
+    expect(r.catalog.skills.find(s => s.skill_id === 'developer.new')!.status).toBe('registered');
+    expect(JSON.stringify(r.body)).not.toMatch(/needs_tests|must pass the lifecycle test-gate/);
   });
 });
 

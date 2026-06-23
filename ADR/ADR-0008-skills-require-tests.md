@@ -1,7 +1,7 @@
 # ADR-0008 — Skills are test-gated, versioned, iterable assets
 
 ## Status
-Accepted
+Accepted · **Superseded by ADR-0013 (2026-06-23, STORY-TRUST.6)** — the test-gate is **RETIRED** under the operator-trust model: user skills install and run **unvalidated** (tests are an optional self-check, never a gate; no quarantine, no leakage-audit blocking registration). The Decision below is preserved as the historical record of the original (now-retired) policy and does **NOT** describe a current requirement. See `ADR/ADR-0013-no-sandbox-operator-trust.md`.
 
 ## Context
 Skills generated once and trusted forever are brittle and unverifiable, and they

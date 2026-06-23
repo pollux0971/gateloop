@@ -23,7 +23,9 @@ export interface SkillEntry {
   skill_id: string;
   agent_role: string;
   description: string;
-  status: 'registered' | 'quarantined' | 'needs_tests' | 'draft';
+  // STORY-TRUST.6 (ADR-0013): the test-gate is retired, so there is no "awaiting test-gate"
+  // (needs_tests) status to advertise. A skill the operator adds is registered active.
+  status: 'registered' | 'quarantined' | 'draft';
   avoid_lines?: string[];
   test_count?: number;
   quarantine_reason?: string;
@@ -61,12 +63,14 @@ function defaultSkillControl(req: SkillControlRequest): void {
   }
 }
 
+// STORY-TRUST.6: no `needs_tests` ("awaiting test-gate") colour — the test-gate is retired.
 const STATUS_COLOR: Record<SkillEntry['status'], string> = {
   registered:   '#7EE081',
   quarantined:  '#E57373',
-  needs_tests:  '#F2A65A',
   draft:        'rgba(230,237,243,.34)',
 };
+/** Fallback colour for any status not in the map (e.g. legacy data) — never advertises a gate. */
+const statusColor = (s: string): string => STATUS_COLOR[s as SkillEntry['status']] ?? 'rgba(230,237,243,.34)';
 
 function SkillContents({ detail }: { detail: SkillDetail }): JSX.Element {
   const [tab, setTab] = useState<'metadata' | 'markdown' | 'scripts'>('metadata');
@@ -117,8 +121,8 @@ function SkillCard({ skill, onControl }: { skill: SkillEntry; onControl: (req: S
         <span style={{
           ...mono,
           fontSize: 10,
-          color: STATUS_COLOR[skill.status],
-          background: `${STATUS_COLOR[skill.status]}22`,
+          color: statusColor(skill.status),
+          background: `${statusColor(skill.status)}22`,
           borderRadius: 4,
           padding: '1px 6px',
         }}>

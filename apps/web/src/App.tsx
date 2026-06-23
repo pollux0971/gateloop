@@ -165,7 +165,8 @@ export function App() {
                     <div style={{ ...mono, fontSize: 12 }}>{s.skill_id}</div>
                     {s.description && <div style={{ fontSize: 12, color: 'rgba(230,237,243,.56)', marginTop: 5, lineHeight: 1.5 }}>{s.description}</div>}
                     <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' as const, marginTop: 8 }}>
-                      <span style={{ ...mono, fontSize: 10, padding: '2px 7px', borderRadius: 6, border: '1px solid rgba(230,237,243,.1)', color: s.status === 'registered' ? '#7EE081' : s.status === 'needs_tests' ? '#F2A65A' : 'rgba(230,237,243,.34)' }}>{s.status || '—'}</span>
+                      {/* STORY-TRUST.6 (ADR-0013): no `needs_tests` ("awaiting test-gate") badge — the test-gate is retired. */}
+                      <span style={{ ...mono, fontSize: 10, padding: '2px 7px', borderRadius: 6, border: '1px solid rgba(230,237,243,.1)', color: s.status === 'registered' ? '#7EE081' : 'rgba(230,237,243,.34)' }}>{s.status || '—'}</span>
                       {(s.depends_on || []).map((dep: string) => (
                         <span key={dep} style={{ ...mono, fontSize: 10, padding: '2px 7px', borderRadius: 6, border: '1px solid rgba(230,237,243,.1)', color: 'rgba(230,237,243,.34)' }}>⇠ {dep.split('.').pop()}</span>
                       ))}

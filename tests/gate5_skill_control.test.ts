@@ -31,14 +31,16 @@ describe('STORY-GATE.5 skill control — user decisions (allowed)', () => {
     expect(cat.skills.find(s => s.skill_id === 'developer.custom')).toBeUndefined();
   });
 
-  it('cockpit_add_skill_permitted_unvalidated (STORY-TRUST.1: test-gate retired)', () => {
-    // ADR-0013: an add is PERMITTED with no test requirement (the decision layer no longer
-    // refuses). NOTE the residual: apps/api/skillControl.ts (out of STORY-TRUST.1's write-set)
-    // still stamps a cockpit-added skill `needs_tests` as a staging LABEL — it is not a gate
-    // and does not block the operator registering directly via skill-runtime.
+  it('cockpit_add_skill_registered_active_unvalidated (STORY-TRUST.6: test-gate dead on the API path)', () => {
+    // ADR-0013: an add is PERMITTED with no test requirement AND registered ACTIVE — apps/api
+    // no longer stamps `needs_tests` (which would bench it via selectSkillsForRole). The skill
+    // is usable immediately, unvalidated (operator-trust); tests are an optional self-check.
     const r = handleSkillControl({ op: 'add', manifest: { skill_id: 'developer.new', agent_role: 'developer', path: 'skills/developer/new', tests: [] } }, io);
     expect(r.code).toBe(200);                    // permitted even without tests
-    expect(cat.skills.find(s => s.skill_id === 'developer.new')).toBeDefined();
+    const added = cat.skills.find(s => s.skill_id === 'developer.new');
+    expect(added).toBeDefined();
+    expect(added!.status).toBe('registered');    // active, not benched as needs_tests
+    expect(JSON.stringify(r.body)).not.toMatch(/needs_tests|must pass the lifecycle test-gate/);
   });
 });
 
