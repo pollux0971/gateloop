@@ -1,0 +1,14 @@
+{
+  "name": "@gateloop/desktop",
+  "version": "0.0.0",
+  "private": true,
+  "description": "GateLoop Console — v5 cockpit wrapped as a Tauri desktop app",
+  "scripts": {
+    "tauri": "tauri",
+    "dev": "tauri dev",
+    "build": "tauri build"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2"
+  }
+}

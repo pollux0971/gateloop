@@ -13,6 +13,8 @@
 #   walk         walking-skeleton demo — one story end-to-end through the harness (no LLM)
 #   web          start the web dashboard (Vite dev server, default http://localhost:5173)
 #   api          start the API dev server (tsx)
+#   desktop      launch the GateLoop Console desktop app (Tauri; auto-starts the api sidecar)
+#   desktop:build  package the desktop app → .deb / .AppImage / .rpm
 #   codex-login  bind a Codex (ChatGPT) account to this project  (opens your browser)
 #   codex-status show the current Codex binding
 #   help         show this help
@@ -61,6 +63,17 @@ case "$cmd" in
     need_pnpm
     echo "→ API dev server (tsx)  (Ctrl-C to stop)"
     pnpm --filter @gateloop/api dev
+    ;;
+  desktop)
+    need_pnpm
+    echo "→ GateLoop Console desktop app (Tauri). The app auto-starts @gateloop/api (sidecar)."
+    echo "  First run compiles a debug build (a few minutes); the native window then opens."
+    pnpm --filter @gateloop/desktop dev
+    ;;
+  desktop:build)
+    need_pnpm
+    echo "→ Packaging the desktop app (.deb / .AppImage / .rpm) → apps/desktop/src-tauri/target/release/bundle"
+    GATELOOP_REPO="$(pwd)" BUN_BIN="$(command -v bun || echo bun)" pnpm --filter @gateloop/desktop build
     ;;
   codex-login)
     $NODE scripts/codex-login.ts

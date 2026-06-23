@@ -1,0 +1,1448 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CodeHarness Dev Console — demo</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+/* ── MD3 tokens（沿用 mockup 色票）───────────────── */
+:root{
+  --bg:#121216; --s1:#1a1a1f; --s2:#202026; --s3:#27272e; --s4:#30303a;
+  --line:rgba(255,255,255,.09);
+  --text:#e6e3ec; --dim:#a8a4b2; --faint:#76727f;
+  --sup:#ffce86; --dev:#7fd4ec; --dbg:#f5a6c1; --rev:#a9d9c6; --ps:#cdb4ff;
+  --pass:#8ee0aa; --fail:#ffb2bb; --gate:#ffd98a;
+  --sans:'Outfit','Noto Sans TC',system-ui,sans-serif;
+  --mono:'JetBrains Mono',ui-monospace,monospace;
+  --r-xl:24px; --r-lg:18px; --r-md:12px; --r-pill:999px;
+  --e1:0 1px 2px rgba(0,0,0,.4),0 1px 3px rgba(0,0,0,.28);
+  --e2:0 3px 8px rgba(0,0,0,.42); --e3:0 10px 30px rgba(0,0,0,.55);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{font-family:var(--sans);background:var(--bg);color:var(--text);font-size:14.5px;line-height:1.55;overflow:hidden;
+  background-image:radial-gradient(1100px 520px at 78% -15%,rgba(127,212,236,.06),transparent 60%)}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
+:focus-visible{outline:2px solid var(--dev);outline-offset:2px;border-radius:6px}
+@media (prefers-reduced-motion:reduce){*{animation-duration:.01ms!important;transition-duration:.01ms!important}}
+
+/* ── App frame：可收合 rail + 主區 ─────────────── */
+.app{display:grid;grid-template-columns:64px 1fr;height:100vh;padding:10px;gap:10px;transition:grid-template-columns .26s cubic-bezier(.2,0,0,1)}
+.app.rail-open{grid-template-columns:208px 1fr}
+
+/* MD3 navigation rail（收起=圖示；展開=圖示+文字）*/
+.rail{display:flex;flex-direction:column;gap:4px;background:var(--s1);border-radius:var(--r-xl);padding:12px 8px;box-shadow:var(--e1);overflow:hidden}
+.rail .top{display:flex;align-items:center;gap:9px;margin-bottom:10px;padding:0 4px}
+.rail .logo{font-family:var(--mono);font-weight:700;font-size:14px;color:var(--dev);width:40px;height:40px;flex:0 0 40px;display:grid;place-items:center;background:var(--s3);border-radius:13px}
+.rail .wordmark{font-weight:700;letter-spacing:.4px;font-size:15px;white-space:nowrap;opacity:0;transition:opacity .2s}
+.app.rail-open .wordmark{opacity:1}
+.rail .burger{margin-left:auto;color:var(--dim);font-size:17px;width:32px;height:32px;flex:0 0 32px;display:grid;place-items:center;border-radius:10px}
+.rail .burger:hover{background:var(--s4);color:var(--text)}
+.rail button.nav{display:flex;align-items:center;gap:12px;width:100%;padding:9px 4px;border-radius:16px;color:var(--dim);font-size:13.5px;letter-spacing:.3px;transition:background .15s,color .15s;white-space:nowrap}
+.rail button.nav .ic{font-size:18px;line-height:1;width:40px;height:30px;flex:0 0 40px;display:grid;place-items:center;border-radius:var(--r-pill);transition:background .15s}
+.rail button.nav .lb{opacity:0;transition:opacity .2s}
+.app.rail-open .rail button.nav .lb{opacity:1}
+.rail button.nav:hover{color:var(--text)}
+.rail button.nav.on{color:var(--text)}
+.rail button.nav.on .ic{background:rgba(127,212,236,.18);color:var(--dev)}
+.rail .grow{flex:1}
+.rail .gates{font-family:var(--mono);font-size:9.5px;color:var(--faint);line-height:1.7;padding:6px 4px 2px;display:flex;align-items:center;gap:9px}
+.rail .gates .gx{width:40px;flex:0 0 40px;text-align:center;color:var(--fail);font-size:13px;letter-spacing:1px}
+.rail .gates .gl{opacity:0;transition:opacity .2s;white-space:nowrap}
+.app.rail-open .gates .gl{opacity:1}
+
+/* ── 頁面切換 ─────────────────────────────────── */
+.page{display:none;flex:1;min-height:0;flex-direction:column}
+.page.on{display:flex}
+
+/* 主區 */
+.main{display:flex;flex-direction:column;min-width:0;background:var(--s1);border-radius:var(--r-xl);overflow:hidden;box-shadow:var(--e2)}
+
+/* Header */
+.header{display:flex;align-items:center;gap:18px;padding:13px 20px;background:var(--s2);flex:0 0 auto}
+.story{display:flex;flex-direction:column;min-width:0}
+.story .sid{font-family:var(--mono);font-size:12.5px;color:var(--dev)}
+.story .obj{color:var(--dim);font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:430px}
+.hgrow{flex:1}
+.stat{font-family:var(--mono);font-size:11px;color:var(--faint);text-align:right;line-height:1.45}
+.stat b{color:var(--text);font-size:13px}
+.mode{display:flex;background:var(--s3);border-radius:var(--r-pill);padding:3px;font-family:var(--mono);font-size:12px}
+.mode button{padding:6px 14px;border-radius:var(--r-pill);color:var(--dim);letter-spacing:.4px;transition:.15s}
+.mode button.on{background:var(--s4);color:var(--text)}
+
+/* ── 三欄面板（trace 投影）─────────────────────── */
+.panes{flex:1;min-height:0;display:grid;grid-template-columns:1fr 1fr 1fr 188px;gap:10px;padding:10px}
+
+/* SYSTEM SPINE（中央 harness 事件欄）*/
+.pane.p-spine{background:linear-gradient(180deg,rgba(174,195,202,.06),var(--bg))}
+.p-spine .av{background:var(--sys)} .p-spine .nm{color:var(--sys)}
+.spine-stream{flex:1;overflow-y:auto;padding:12px 11px;font-family:var(--mono);font-size:11.5px;line-height:1.7}
+.sp{display:flex;gap:7px;padding:6px 0;color:var(--dim);border-bottom:1px solid rgba(255,255,255,.04)}
+.sp .ico{flex:0 0 16px;text-align:center}
+.sp .tx{flex:1;word-break:break-word}
+.sp .tx b{color:var(--sys);font-weight:600}
+.sp.ok .ico{color:var(--pass)} .sp.bad .ico{color:var(--fail)} .sp.gate .ico{color:var(--gate)}
+.sp .res{color:var(--pass)} .sp .res.bad{color:var(--fail)}
+.pane{display:flex;flex-direction:column;min-width:0;background:var(--bg);border-radius:20px;overflow:hidden}
+.pane-head{flex:0 0 auto;display:flex;align-items:center;gap:9px;padding:11px 14px;background:var(--s2)}
+.av{width:25px;height:25px;border-radius:9px;display:grid;place-items:center;font-family:var(--mono);font-weight:700;font-size:12px;color:#16131a}
+.p-sup .av{background:var(--sup)} .p-rev .av{background:var(--rev)}
+.pane-head .nm{font-weight:600;font-size:14.5px}
+.p-sup .nm{color:var(--sup)} .p-rev .nm{color:var(--rev)}
+.pane-head .sub{font-family:var(--mono);font-size:10.5px;color:var(--faint);margin-left:auto}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--faint)}
+.dot.live{background:var(--dev);box-shadow:0 0 8px var(--dev);animation:pulse 1.6s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+
+/* Dev/Debugger 分頁（同一視窗）*/
+.tabs{display:flex;gap:2px;margin-left:6px}
+.tabs button{font-family:var(--mono);font-size:12.5px;padding:6px 14px;border-radius:12px 12px 0 0;color:var(--faint);position:relative;letter-spacing:.3px}
+.tabs button.on{color:var(--text);background:var(--bg)}
+.tabs button.t-dev.on{box-shadow:inset 0 2px 0 var(--dev)}
+.tabs button.t-dbg.on{box-shadow:inset 0 2px 0 var(--dbg)}
+.tabs button .blink{position:absolute;top:7px;right:5px;width:6px;height:6px;border-radius:50%;background:var(--dbg);opacity:0;box-shadow:0 0 6px var(--dbg)}
+.tabs button.alert .blink{opacity:1;animation:pulse 1.2s infinite}
+
+/* CLI stream（純文字、無泡泡、無時間戳）*/
+.stream{flex:1;overflow-y:auto;padding:12px 14px;font-family:var(--mono);font-size:12.6px;line-height:1.7;scrollbar-width:thin}
+.ln{display:block;white-space:pre-wrap;word-break:break-word;margin:2px 0}
+.ln .who{font-weight:600;margin-right:8px}
+.w-sup{color:var(--sup)} .w-dev{color:var(--dev)} .w-dbg{color:var(--dbg)} .w-rev{color:var(--rev)}
+.w-ps{color:var(--ps)} .w-val{color:var(--pass)} .w-sys{color:var(--faint)} .w-you{color:var(--gate)}
+.ln.tool{color:var(--dim)}
+.ln.tool .cmd{color:#a9e6f6}
+.ln.tool .ok{color:var(--pass)} .ln.tool .bad{color:var(--fail)}
+.ln.dim{color:var(--faint)}
+.ln.gate{color:var(--gate)}
+
+/* agent 互呼叫 prompt：摘要一行 + hover 看全文 */
+.callln{display:flex;gap:7px;align-items:baseline;margin:3px 0;color:var(--dim);cursor:help;position:relative}
+.callln .ar{color:var(--faint)}
+.callln .sm{flex:1;color:var(--text);border-bottom:1px dotted var(--faint)}
+.callln .full{position:absolute;left:0;bottom:calc(100% + 6px);z-index:20;width:min(440px,92%);background:var(--s4);
+  border-radius:12px;padding:11px 13px;box-shadow:var(--e3);font-size:12px;line-height:1.6;color:var(--text);
+  white-space:normal;opacity:0;pointer-events:none;transition:opacity .15s;border-left:3px solid var(--sup)}
+.callln .full .ph{font-family:var(--mono);font-size:10.5px;color:var(--faint);text-transform:uppercase;letter-spacing:.5px;margin-bottom:5px}
+.callln:hover .full{opacity:1}
+
+/* 改動的檔案 / diff（Claude-Code 風）*/
+.diff{margin:5px 0 7px;border-radius:12px;overflow:hidden;background:#141418;font-size:12px}
+.diff .fh{display:flex;align-items:center;gap:8px;padding:7px 12px;background:var(--s3);font-family:var(--mono);font-size:11.5px}
+.diff .fh .fp{color:#a9e6f6;flex:1}
+.diff .fh .adds{color:var(--pass)} .diff .fh .dels{color:var(--fail)}
+.diff .body{padding:7px 0;font-family:var(--mono);font-size:11.6px;line-height:1.65;overflow-x:auto}
+.diff .dl{display:block;padding:0 12px;white-space:pre}
+.diff .dl.add{background:rgba(142,224,170,.1);color:#bdeacb}
+.diff .dl.del{background:rgba(255,178,187,.09);color:#f2bcc2}
+.diff .dl.ctx{color:var(--faint)}
+.diff .dl .gut{color:var(--faint);user-select:none;margin-right:12px}
+
+/* Developer/Debugger 底部 to-do list */
+.todo{flex:0 0 auto;border-top:1px solid var(--line);background:var(--s2);padding:9px 13px 11px;max-height:178px;overflow-y:auto}
+.todo .th{display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:10.5px;letter-spacing:.5px;text-transform:uppercase;color:var(--faint);margin-bottom:7px}
+.todo .th .ct{margin-left:auto;color:var(--dim)}
+.todo .ti{display:flex;align-items:center;gap:9px;font-size:12.5px;padding:3px 0;color:var(--dim);transition:color .2s}
+.todo .ti .box{width:15px;height:15px;flex:0 0 15px;border-radius:5px;border:1.6px solid var(--faint);display:grid;place-items:center;font-size:10px;color:transparent;transition:.2s}
+.todo .ti.doing .box{border-color:var(--dev);box-shadow:0 0 7px rgba(127,212,236,.5)}
+.todo .ti.doing{color:var(--text)}
+.todo .ti.done .box{background:var(--pass);border-color:var(--pass);color:#0c1a10}
+.todo .ti.done{color:var(--faint)}
+.todo .ti.done .tt{text-decoration:line-through}
+.todo .ti .tt{flex:1}
+
+/* thinking：半透明預覽 → 點開全文 */
+.think{margin:4px 0 6px;border-radius:12px;background:rgba(174,195,202,.07);padding:8px 11px;color:#bcd0c4;cursor:pointer;
+  opacity:.45;max-height:3.1em;overflow:hidden;position:relative;transition:opacity .2s}
+.think::after{content:"⌄ 展開思考";position:absolute;right:10px;bottom:6px;font-size:10px;color:var(--faint);background:var(--bg);padding:1px 7px;border-radius:8px}
+.think:hover{opacity:.7}
+.think.open{opacity:1;max-height:none}
+.think.open::after{content:"⌃ 收合"}
+
+/* 卡片（contract / diagnosis / handback）*/
+.card{margin:6px 0 8px;background:var(--s2);border-radius:var(--r-lg);box-shadow:var(--e1);padding:11px 13px;font-family:var(--sans);position:relative;overflow:hidden}
+.card::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--sup)}
+.card.diag::before{background:var(--rev)}
+.card.hb::before{background:var(--ps)}
+.card h4{font-size:12px;font-family:var(--mono);letter-spacing:.5px;color:var(--dim);text-transform:uppercase;margin-bottom:6px}
+.card .row{display:flex;gap:8px;font-size:13px;margin:3px 0}
+.card .row .k{font-family:var(--mono);font-size:10.5px;color:var(--faint);text-transform:uppercase;flex:0 0 84px;padding-top:2px;letter-spacing:.4px}
+.card ol{margin:2px 0 2px 18px;font-size:13px}
+.card ol li{margin:3px 0}
+.card ol li b{color:var(--rev);font-family:var(--mono);font-size:11px;margin-left:6px}
+.chips{display:flex;flex-wrap:wrap;gap:5px;margin-top:4px}
+.chip{font-family:var(--mono);font-size:11px;padding:3px 10px;border-radius:var(--r-pill);background:var(--s4);color:var(--dim)}
+.chip.no{color:var(--fail);background:rgba(255,178,187,.12)}
+.chip.new{color:#16131a;background:var(--ps)}
+.chip.lock{color:var(--gate);background:rgba(255,217,138,.12)}
+
+/* ── 平行模式 2×2 grid ─────────────────────────── */
+.grid{flex:1;min-height:0;display:none;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;gap:8px;padding:2px}
+.center.parallel .grid{display:grid}
+.center.parallel .single{display:none}
+.center .single{display:flex;flex-direction:column;flex:1;min-height:0}
+.cell{background:var(--bg);border:1px solid var(--line);border-radius:16px;display:flex;flex-direction:column;overflow:hidden;cursor:pointer;transition:border-color .15s, box-shadow .2s}
+.cell:hover{border-color:rgba(127,212,236,.4)}
+.cell .ch{display:flex;align-items:center;gap:7px;padding:7px 11px;background:var(--s2);font-family:var(--mono);font-size:11px}
+.cell .ch .cid{color:var(--dev);font-weight:600}
+.cell .ch .st{margin-left:auto;color:var(--faint)}
+.cell .cb{flex:1;overflow:hidden;padding:7px 11px;font-family:var(--mono);font-size:11px;line-height:1.7;color:var(--dim)}
+.cell.review{border-color:rgba(169,217,198,.55);box-shadow:0 0 0 1px rgba(169,217,198,.3)}
+.cell.done .ch .st{color:var(--pass)}
+.grid.zoomed{grid-template-columns:1fr;grid-template-rows:1fr auto}
+.grid.zoomed .cell{display:none}
+.grid.zoomed .cell.zoom{display:flex;cursor:default}
+.grid.zoomed .chipsrow{display:flex;gap:6px}
+.chipsrow{display:none}
+.grid.zoomed .chipsrow .chip{cursor:pointer}
+
+/* ── 單一輸入框（owner badge）──────────────────── */
+.inputbar{flex:0 0 auto;display:flex;align-items:center;gap:10px;padding:10px 14px;background:var(--s2)}
+.owner{display:flex;align-items:center;gap:7px;font-family:var(--mono);font-size:11.5px;font-weight:600;letter-spacing:.4px;
+  padding:7px 13px;border-radius:var(--r-pill);background:rgba(255,206,134,.14);color:var(--sup);transition:background .4s,color .4s;white-space:nowrap}
+.owner .odot{width:7px;height:7px;border-radius:50%;background:var(--sup);transition:background .4s}
+.owner.ps{background:rgba(205,180,255,.16);color:var(--ps)}
+.owner.ps .odot{background:var(--ps)}
+.field{flex:1;display:flex;align-items:center;background:var(--s3);border-radius:var(--r-pill);padding:4px 6px 4px 18px;transition:box-shadow .3s}
+.field.ps{box-shadow:0 0 0 1.5px rgba(205,180,255,.5)}
+.field input{flex:1;background:none;border:0;color:var(--text);font-family:var(--mono);font-size:13px;padding:9px 0;outline:none}
+.field input::placeholder{color:var(--faint)}
+.send{background:var(--dev);color:#0c1418;font-weight:600;font-size:13px;padding:9px 18px;border-radius:var(--r-pill);transition:filter .15s}
+.send:hover{filter:brightness(1.1)}
+.field.ps .send{background:var(--ps)}
+
+/* ── 共用：頁面內容容器 ───────────────────────── */
+.pg-wrap{flex:1;min-height:0;overflow-y:auto;padding:22px 26px}
+.pg-title{display:flex;align-items:baseline;gap:12px;margin-bottom:4px}
+.pg-title h2{font-size:21px;font-weight:700;letter-spacing:.2px}
+.pg-title .tag{font-family:var(--mono);font-size:11px;color:var(--faint)}
+.pg-sub{color:var(--dim);font-size:13.5px;margin-bottom:20px;max-width:680px}
+.sect{margin-bottom:22px}
+.sect h3{font-family:var(--mono);font-size:12px;letter-spacing:.6px;text-transform:uppercase;color:var(--faint);margin-bottom:10px;display:flex;align-items:center;gap:8px}
+.panel{background:var(--bg);border-radius:var(--r-lg);padding:16px 18px}
+
+/* Planning Steward 頁：左引導對話 + 右縱向節點進度 */
+.ps-top{display:flex;align-items:center;gap:14px;margin-bottom:16px}
+.modesw{display:flex;background:var(--s3);border-radius:var(--r-pill);padding:3px;font-family:var(--mono);font-size:12.5px;margin-left:auto}
+.modesw button{padding:7px 16px;border-radius:var(--r-pill);color:var(--dim);letter-spacing:.3px;transition:.18s;display:flex;align-items:center;gap:7px}
+.modesw button.on.gf{background:rgba(127,212,236,.18);color:var(--dev)}
+.modesw button.on.bf{background:rgba(255,191,134,.18);color:var(--avoid,#ffbf86)}
+.ps-grid{display:grid;grid-template-columns:1fr 300px;gap:16px;flex:1;min-height:0}
+.ps-chat{display:flex;flex-direction:column;background:var(--bg);border-radius:var(--r-lg);overflow:hidden}
+.ps-chat .pch{padding:13px 16px;background:var(--s2);display:flex;align-items:center;gap:9px}
+.ps-chat .pch .av{background:var(--ps)}
+.ps-chat .pch .nm{color:var(--ps);font-weight:600}
+.ps-chat .pch .ph{font-family:var(--mono);font-size:10.5px;color:var(--faint);margin-left:auto}
+.ps-stream{flex:1;overflow-y:auto;padding:18px 18px 8px;font-size:14px}
+.ps-msg{margin-bottom:14px;max-width:90%;animation:rise .3s ease}
+@keyframes rise{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+.ps-msg.me{margin-left:auto}
+.ps-msg .b{padding:11px 15px;border-radius:16px;background:var(--s2);color:var(--text);line-height:1.62}
+.ps-msg.me .b{background:rgba(205,180,255,.16);color:#ece4ff;border-bottom-right-radius:5px}
+.ps-msg.ps-b .b{border-bottom-left-radius:5px}
+.ps-msg .lbl{font-family:var(--mono);font-size:10.5px;color:var(--faint);margin:0 0 5px 4px}
+.ps-msg.me .lbl{text-align:right;padding-right:4px;color:var(--gate)}
+/* 引導式選項（大卡片，非 CLI）*/
+.guide{display:flex;flex-direction:column;gap:8px;margin-top:12px;max-width:none}
+.gopt{display:flex;align-items:center;gap:12px;text-align:left;padding:13px 16px;border-radius:14px;background:var(--s2);
+  border:1px solid var(--line);transition:.16s;width:100%}
+.gopt:hover{border-color:var(--ps);background:rgba(205,180,255,.08);transform:translateX(2px)}
+.gopt .gi{width:32px;height:32px;flex:0 0 32px;border-radius:10px;background:var(--s4);display:grid;place-items:center;font-size:16px}
+.gopt .gt{flex:1}
+.gopt .gt b{display:block;font-size:14px;color:var(--text)}
+.gopt .gt small{color:var(--faint);font-size:12px}
+.gopt .gk{font-family:var(--mono);font-size:11px;color:var(--faint)}
+.ps-free{display:flex;gap:9px;padding:11px 14px;background:var(--s2)}
+.ps-free input{flex:1;background:var(--s3);border:0;border-radius:var(--r-pill);color:var(--text);font-size:13px;padding:10px 16px;outline:none}
+.ps-free input::placeholder{color:var(--faint)}
+.ps-free button{background:var(--ps);color:#1a1226;font-weight:600;padding:10px 18px;border-radius:var(--r-pill)}
+
+/* 右側：縱向節點進度條 */
+.stepper{background:var(--bg);border-radius:var(--r-lg);padding:20px 18px;overflow-y:auto}
+.stepper .sh{font-family:var(--mono);font-size:11px;letter-spacing:.6px;text-transform:uppercase;color:var(--faint);margin-bottom:18px;display:flex;align-items:center;gap:8px}
+.stepper .sh .md{margin-left:auto;font-size:10.5px;padding:3px 9px;border-radius:var(--r-pill)}
+.stepper .sh .md.gf{background:rgba(127,212,236,.16);color:var(--dev)}
+.stepper .sh .md.bf{background:rgba(255,191,134,.16);color:#ffbf86}
+.step{display:flex;gap:13px;position:relative;padding-bottom:20px}
+.step:last-child{padding-bottom:0}
+.step .rail{position:absolute;left:13px;top:26px;bottom:0;width:2px;background:var(--s4)}
+.step:last-child .rail{display:none}
+.step .node{width:28px;height:28px;flex:0 0 28px;border-radius:50%;border:2px solid var(--s4);background:var(--bg);
+  display:grid;place-items:center;font-family:var(--mono);font-size:12px;color:var(--faint);z-index:1;transition:.3s}
+.step .ct{padding-top:3px}
+.step .ct .nm{font-size:13.5px;color:var(--dim);font-weight:500;transition:.3s}
+.step .ct .ds{font-size:11.5px;color:var(--faint);margin-top:2px;line-height:1.5;display:none}
+.step.active .node{border-color:var(--ps);color:var(--ps);box-shadow:0 0 0 5px rgba(205,180,255,.12)}
+.step.active .ct .nm{color:var(--text)}
+.step.active .ct .ds{display:block}
+.step.done .node{background:var(--ps);border-color:var(--ps);color:#1a1226}
+.step.skip .node{background:transparent;border-style:dashed;border-color:var(--faint);color:var(--faint)}
+.step.skip .ct .nm{text-decoration:line-through;color:var(--faint)}
+.step.done .rail{background:var(--ps)}
+.step.done .ct .nm{color:var(--dim)}
+.bf .step.active .node{border-color:#ffbf86;color:#ffbf86;box-shadow:0 0 0 5px rgba(255,191,134,.12)}
+.bf .step.done .node{background:#ffbf86;border-color:#ffbf86}
+.bf .step.done .rail{background:#ffbf86}
+
+/* ===== v5 新增：顶部全局状态条 ===== */
+.topbar{display:flex;align-items:center;gap:14px;padding:7px 16px;background:var(--s2);border-bottom:1px solid var(--s3);font-size:12px;flex-shrink:0}
+.agentlamps{display:flex;gap:6px;align-items:center}
+.lamp{display:flex;align-items:center;gap:4px;padding:3px 9px;border-radius:var(--r-pill);background:var(--s3);font-family:var(--mono);font-size:10.5px;color:var(--dim)}
+.lamp .dot{width:7px;height:7px;border-radius:50%;background:var(--faint);flex-shrink:0}
+.lamp.thinking .dot{background:var(--gate);animation:breathe 1.3s ease-in-out infinite}
+.lamp.thinking{color:var(--gate)}
+.lamp.waiting .dot{background:var(--dbg);animation:none}
+.lamp.waiting{color:var(--dbg)}
+.lamp.done .dot{background:var(--pass)}
+.lamp.done{color:var(--pass)}
+.lamp.r-sup .dot{box-shadow:0 0 0 2px rgba(244,191,79,.2)}
+@keyframes breathe{0%,100%{opacity:.35}50%{opacity:1}}
+.costbar{margin-left:auto;display:flex;align-items:center;gap:9px;font-family:var(--mono);font-size:11px}
+.costbar .track{width:120px;height:7px;border-radius:4px;background:var(--s3);overflow:hidden}
+.costbar .fill{height:100%;background:linear-gradient(90deg,var(--pass),var(--gate));transition:width .4s,background .4s}
+.costbar .fill.warn{background:linear-gradient(90deg,var(--gate),var(--fail))}
+.costbar .amt{color:var(--dim)}
+.costbar .cap{color:var(--faint)}
+
+/* 思考跑马灯（强化版：只显示最后几行 + 延迟心跳）*/
+.think .heart{position:absolute;right:96px;bottom:6px;font-size:10px;color:var(--dbg);font-family:var(--mono);display:none}
+.think.stalled .heart{display:inline}
+.think.stalled{border:1px dashed rgba(255,178,187,.3)}
+.think .ticker{max-height:42px;overflow:hidden;line-height:1.5;-webkit-mask-image:linear-gradient(180deg,transparent,#000 40%);mask-image:linear-gradient(180deg,transparent,#000 40%)}
+.think.open .ticker{max-height:none;-webkit-mask-image:none;mask-image:none}
+
+/* debug 收敛信号 */
+.debugconv{display:inline-flex;align-items:center;gap:6px;font-family:var(--mono);font-size:10.5px;padding:2px 9px;border-radius:var(--r-pill);background:rgba(255,178,187,.1);color:var(--dbg);margin-left:6px}
+.debugconv.danger{background:rgba(255,107,107,.16);color:var(--fail);font-weight:600}
+.debugconv .att{opacity:.7}
+
+/* Assessor 判定印章 */
+.stamp{display:inline-flex;align-items:center;gap:5px;font-family:var(--mono);font-size:10.5px;padding:3px 10px;border-radius:var(--r-pill);cursor:pointer}
+.stamp.pass{background:rgba(142,224,170,.15);color:var(--pass)}
+.stamp.fail{background:rgba(255,107,107,.15);color:var(--fail)}
+.stamp.pending{background:var(--s3);color:var(--faint)}
+
+/* 中间平行分割行 */
+.splitrow{border-bottom:1px solid var(--s2);display:flex;flex-direction:column;transition:flex .25s}
+.splitrow.collapsed{flex:0 0 auto !important}
+.splitrow.collapsed .sr-body{display:none}
+.splitrow .sr-head{display:flex;align-items:center;gap:9px;padding:7px 12px;cursor:pointer;font-size:12px;background:var(--s1)}
+.splitrow .sr-head .sid{font-family:var(--mono);font-size:11px;padding:2px 8px;border-radius:var(--r-pill)}
+.splitrow .sr-head .ag{font-family:var(--mono);font-size:10.5px;color:var(--dim)}
+.splitrow .sr-head .hb{margin-left:auto;font-family:var(--mono);font-size:10px;color:var(--faint)}
+.splitrow .sr-body{flex:1;overflow-y:auto;padding:10px 12px;min-height:0}
+.sr-head .sid.s-dev{background:rgba(125,211,233,.18);color:var(--dev)}
+.sr-head .sid.s-dbg{background:rgba(244,166,196,.18);color:var(--dbg)}
+
+/* ASCII 报告表格 */
+.ascii{font-family:var(--mono);font-size:11px;line-height:1.5;white-space:pre;color:var(--dim);background:var(--bg);border-radius:10px;padding:11px 13px;overflow-x:auto;margin:6px 0}
+.ascii .hl{color:var(--rev)}
+
+/* ===== pipeline board（Story Manager 合并）===== */
+.pipe-wrap{display:flex;flex-direction:column;gap:16px;flex:1;min-height:0;overflow-y:auto}
+.lanes{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;min-height:0}
+.lane{background:var(--bg);border-radius:12px;padding:10px;display:flex;flex-direction:column;gap:7px}
+.lane h4{font-family:var(--mono);font-size:11px;color:var(--faint);text-transform:uppercase;letter-spacing:.04em;margin-bottom:3px}
+.scard{background:var(--s2);border-radius:9px;padding:8px 10px;font-size:12px;cursor:pointer;border-left:3px solid var(--faint)}
+.scard:hover{background:var(--s3)}
+.scard .sc-id{font-family:var(--mono);font-size:11px;color:var(--dev)}
+.scard .sc-t{color:var(--dim);font-size:11px;margin-top:2px}
+.scard.run{border-left-color:var(--dev)}
+.scard.blok{border-left-color:var(--fail);opacity:.75}
+.scard.done{border-left-color:var(--pass)}
+.scard .sc-why{font-size:10px;color:var(--fail);margin-top:3px;font-family:var(--mono)}
+.admit{background:var(--bg);border-radius:12px;padding:13px 15px}
+.admit h3{font-size:13px;margin-bottom:9px}
+.admit-row{display:flex;align-items:center;gap:10px;font-size:12px;padding:6px 0;border-bottom:1px solid var(--s2)}
+.admit-row .ar-sid{font-family:var(--mono);font-size:11px;color:var(--dev);flex:0 0 110px}
+.admit-row .ar-st{font-family:var(--mono);font-size:10px;padding:2px 8px;border-radius:var(--r-pill)}
+.ar-st.ok{background:rgba(142,224,170,.14);color:var(--pass)}
+.ar-st.wait{background:rgba(255,217,138,.12);color:var(--gate)}
+.ar-st.hold{background:rgba(255,178,187,.12);color:var(--fail)}
+.admit-row .ar-rsn{color:var(--faint);font-size:11px;flex:1}
+.admit-row .ar-act{font-size:10px;font-family:var(--mono);color:var(--dim);padding:3px 9px;border-radius:var(--r-pill);background:var(--s3);cursor:pointer}
+.wave{display:flex;gap:7px;align-items:center;font-family:var(--mono);font-size:11px;color:var(--dim);flex-wrap:wrap}
+.wave .wv{padding:3px 10px;border-radius:var(--r-pill);background:var(--s3)}
+.wave .wv.now{background:var(--dev);color:#0a1a1f;font-weight:600}
+
+/* 成果與預覽頁 */
+.dl-grid{display:grid;grid-template-columns:330px 1fr;gap:16px;flex:1;min-height:0}
+.dl-left{display:flex;flex-direction:column;gap:14px;overflow-y:auto}
+.ckpt{display:flex;gap:11px;padding:10px 13px;border-radius:12px;background:var(--bg);align-items:center}
+.ckpt .cn{width:24px;height:24px;flex:0 0 24px;border-radius:50%;background:var(--pass);color:#0c1a10;display:grid;place-items:center;font-size:12px;font-weight:700}
+.ckpt .ci{flex:1;min-width:0}
+.ckpt .ci .sid{font-family:var(--mono);font-size:12px;color:var(--dev)}
+.ckpt .ci small{display:block;color:var(--faint);font-size:11px}
+.ftree{font-family:var(--mono);font-size:12px;line-height:1.8;color:var(--dim);padding:4px 2px}
+.ftree .dir{color:#a9e6f6}
+.promo{display:flex;flex-direction:column;gap:9px}
+.promo .pr{display:flex;align-items:center;gap:10px;font-size:13px}
+.promo .pr .pk{font-family:var(--mono);font-size:11px;color:var(--faint);flex:0 0 70px}
+.pbtn{font-size:13px;font-weight:600;padding:9px 18px;border-radius:var(--r-pill)}
+.pbtn.ap{background:var(--pass);color:#0c1a10}
+.pbtn.rb{background:var(--s3);color:var(--dim)}
+.pbtn.rb:hover{background:rgba(255,178,187,.15);color:var(--fail)}
+/* 預覽器 */
+.prev{display:flex;flex-direction:column;background:var(--bg);border-radius:var(--r-lg);overflow:hidden;min-height:0}
+.prev .pvh{display:flex;align-items:center;gap:10px;padding:11px 15px;background:var(--s2)}
+.prev .pvh .ti{font-weight:600}
+.prev .pvh .url{font-family:var(--mono);font-size:11px;color:var(--faint);background:var(--s3);padding:5px 13px;border-radius:var(--r-pill);flex:1;text-align:center}
+.devsw{display:flex;background:var(--s3);border-radius:var(--r-pill);padding:3px;font-size:14px}
+.devsw button{padding:4px 11px;border-radius:var(--r-pill);color:var(--dim)}
+.devsw button.on{background:var(--s4);color:var(--text)}
+.prev .stage{flex:1;display:grid;place-items:center;padding:16px;background:repeating-conic-gradient(var(--s1) 0 25%,var(--bg) 0 50%) 50%/22px 22px;min-height:0;overflow:auto}
+.prev iframe{background:#fff;border:0;border-radius:12px;box-shadow:var(--e3);transition:width .3s,height .3s;width:100%;height:100%}
+.prev .stage.m iframe{width:375px;height:92%}
+.prev .stage.t iframe{width:768px;height:92%}
+.empty{display:flex;flex-direction:column;align-items:center;gap:12px;text-align:center;color:var(--dim);max-width:380px}
+.empty .big{font-size:40px;opacity:.5}
+.empty b{font-size:16px;color:var(--text)}
+.empty p{font-size:13px;line-height:1.7;color:var(--faint)}
+.empty .act{margin-top:4px;background:var(--ps);color:#1a1226;font-weight:600;padding:9px 18px;border-radius:var(--r-pill)}
+
+/* 技能與記憶頁 */
+.rolechips{display:flex;gap:7px;margin-bottom:14px;flex-wrap:wrap}
+.rchip{font-family:var(--mono);font-size:12px;padding:7px 15px;border-radius:var(--r-pill);background:var(--s3);color:var(--dim)}
+.rchip.on{color:#16131a;font-weight:600}
+.rchip.on.r-sup{background:var(--sup)}.rchip.on.r-dev{background:var(--dev)}.rchip.on.r-dbg{background:var(--dbg)}
+.rchip.on.r-rev{background:var(--rev)}.rchip.on.r-ps{background:var(--ps)}.rchip.on.r-all{background:var(--text)}
+.skgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:10px}
+.sk{background:var(--bg);border-radius:14px;padding:13px 15px}
+.sk .skh{display:flex;align-items:center;gap:8px;margin-bottom:5px}
+.sk .skh b{font-family:var(--mono);font-size:13px}
+.sk .skh .gs{margin-left:auto;font-family:var(--mono);font-size:10px;padding:3px 10px;border-radius:var(--r-pill)}
+.gs.reg{background:rgba(142,224,170,.14);color:var(--pass)}
+.gs.qua{background:rgba(255,178,187,.13);color:var(--fail)}
+.sk small{color:var(--faint);font-size:11.5px;line-height:1.55;display:block}
+.sk .avoid{margin-top:7px;font-size:11px;color:var(--gate);background:rgba(255,217,138,.08);border-radius:8px;padding:6px 9px}
+.gene{display:flex;align-items:center;gap:10px;padding:10px 13px;border-radius:12px;background:var(--bg);margin-bottom:7px;font-size:12.5px}
+.gene .gid{font-family:var(--mono);color:var(--dbg);flex:0 0 86px}
+.gene .gtx{flex:1;color:var(--dim)}
+.gene .rmd{font-family:var(--mono);font-size:10.5px;padding:4px 11px;border-radius:var(--r-pill);background:rgba(169,217,198,.13);color:var(--rev)}
+.gene .rec{font-family:var(--mono);font-size:11px;color:var(--faint)}
+
+/* API 管理頁 */
+.prov{display:flex;align-items:center;gap:13px;padding:14px 16px;border-radius:14px;background:var(--bg);margin-bottom:9px}
+.prov .pic{width:38px;height:38px;flex:0 0 38px;border-radius:11px;display:grid;place-items:center;font-family:var(--mono);font-weight:700;font-size:15px;color:#16131a}
+.prov .info{flex:1;min-width:0}
+.prov .info .nm{font-weight:600;font-size:14.5px}
+.prov .info .meta{font-family:var(--mono);font-size:11px;color:var(--faint)}
+.prov .st{font-family:var(--mono);font-size:11px;padding:5px 12px;border-radius:var(--r-pill)}
+.prov .st.connected{background:rgba(142,224,170,.14);color:var(--pass)}
+.prov .st.gated{background:rgba(255,217,138,.13);color:var(--gate)}
+.prov .st.off{background:var(--s3);color:var(--faint)}
+.prov .act{font-family:var(--mono);font-size:12px;padding:7px 14px;border-radius:var(--r-pill);background:var(--s3);color:var(--dim)}
+.prov .act:hover{background:var(--s4);color:var(--text)}
+.route{display:flex;align-items:center;gap:12px;padding:11px 14px;border-radius:12px;background:var(--bg);margin-bottom:7px;font-size:13.5px}
+.route .ag{font-family:var(--mono);font-size:12px;font-weight:600;flex:0 0 110px}
+.route .arr{color:var(--faint)}
+.route select{margin-left:auto;background:var(--s3);border:0;color:var(--text);font-family:var(--mono);font-size:12px;padding:7px 12px;border-radius:10px;outline:none}
+.gatewarn{display:flex;gap:10px;align-items:flex-start;background:rgba(255,217,138,.08);border-radius:14px;padding:13px 15px;font-size:13px;color:var(--gate);line-height:1.6}
+
+/* 設定頁（三層）*/
+.setlayer{margin-bottom:20px}
+.setlayer .lh{display:flex;align-items:center;gap:9px;margin-bottom:9px}
+.setlayer .lh .num{font-family:var(--mono);font-size:11px;width:22px;height:22px;display:grid;place-items:center;border-radius:7px;background:var(--s3);color:var(--dim)}
+.setlayer .lh b{font-size:14.5px}
+.setlayer .lh .hint{font-size:11.5px;color:var(--faint);margin-left:auto}
+.setrow{display:flex;align-items:center;gap:12px;padding:11px 15px;border-radius:12px;background:var(--bg);margin-bottom:7px}
+.setrow .key{font-family:var(--mono);font-size:12.5px;color:var(--dim);flex:1}
+.setrow .key small{display:block;color:var(--faint);font-size:10.5px;margin-top:2px;font-family:var(--sans)}
+.seg{display:flex;background:var(--s3);border-radius:var(--r-pill);padding:3px;font-family:var(--mono);font-size:11.5px}
+.seg button{padding:5px 12px;border-radius:var(--r-pill);color:var(--dim)}
+.seg button.on{background:var(--s4);color:var(--text)}
+.setrow input[type=number]{width:96px;background:var(--s3);border:0;color:var(--text);font-family:var(--mono);font-size:12.5px;padding:7px 11px;border-radius:10px;text-align:right;outline:none}
+.setrow.locked{outline:1px solid rgba(255,217,138,.3)}
+.locktag{font-family:var(--mono);font-size:10.5px;color:var(--gate);background:rgba(255,217,138,.12);padding:5px 11px;border-radius:var(--r-pill)}
+.setrow.ro .val{font-family:var(--mono);font-size:12px;color:var(--faint)}
+.layer-gate .lh .num{background:rgba(255,178,187,.15);color:var(--fail)}
+
+/* ── Story Manager drawer ─────────────────────── */
+.drawer{position:fixed;top:10px;right:-420px;bottom:10px;width:400px;background:var(--s1);border-radius:var(--r-xl);box-shadow:var(--e3);
+  display:flex;flex-direction:column;transition:right .3s cubic-bezier(.2,0,0,1);z-index:30}
+.drawer.open{right:10px}
+.drawer .dh{display:flex;align-items:center;padding:16px 18px;background:var(--s2);border-radius:var(--r-xl) var(--r-xl) 0 0}
+.drawer .dh b{font-size:16px}
+.drawer .dh .x{margin-left:auto;color:var(--dim);font-size:18px;width:32px;height:32px;border-radius:50%;display:grid;place-items:center}
+.drawer .dh .x:hover{background:var(--s4)}
+.drawer .db{flex:1;overflow-y:auto;padding:12px 14px}
+.srow{display:flex;align-items:center;gap:9px;padding:10px 12px;border-radius:14px;background:var(--bg);margin-bottom:8px}
+.srow .id{font-family:var(--mono);font-size:12px;color:var(--dev);flex:0 0 92px}
+.srow .tt{font-size:12.5px;color:var(--dim);flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.srow .hold{font-family:var(--mono);font-size:10.5px;padding:4px 11px;border-radius:var(--r-pill);background:var(--s3);color:var(--dim)}
+.srow .hold:hover{background:var(--s4);color:var(--text)}
+.srow.held{outline:1px solid rgba(255,217,138,.35)}
+.dnote{font-size:11.5px;color:var(--faint);padding:6px 4px 12px;line-height:1.6}
+.confirm{position:fixed;inset:0;background:rgba(0,0,0,.5);display:none;place-items:center;z-index:40}
+.confirm.open{display:grid}
+.confirm .box{background:var(--s2);border-radius:var(--r-lg);padding:20px 22px;width:340px;box-shadow:var(--e3)}
+.confirm .box p{font-size:13.5px;color:var(--dim);margin:8px 0 16px;line-height:1.6}
+.confirm .acts{display:flex;gap:8px;justify-content:flex-end}
+.confirm .acts button{padding:8px 16px;border-radius:var(--r-pill);font-size:13px}
+.confirm .ok{background:var(--gate);color:#1a1206;font-weight:600}
+.confirm .no{color:var(--dim)}
+.toast{position:fixed;left:50%;bottom:74px;transform:translateX(-50%) translateY(20px);background:var(--s3);color:var(--text);
+  font-size:13px;padding:10px 20px;border-radius:var(--r-pill);box-shadow:var(--e3);opacity:0;transition:.3s;z-index:50;pointer-events:none}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <!-- 左側 toolbar（可收合 MD3 rail，預設收起）-->
+  <nav class="rail" aria-label="主導覽">
+    <div class="top">
+      <div class="logo">CH</div>
+      <span class="wordmark">CodeHarness</span>
+      <button class="burger" id="burger" title="展開／收起側欄" aria-label="展開或收起側欄">☰</button>
+    </div>
+    <button class="nav on" data-page="console"><span class="ic">▣</span><span class="lb">開發主控台</span></button>
+    <button class="nav" data-page="planning"><span class="ic">✎</span><span class="lb">規格討論</span></button>
+    <button class="nav" id="nav-stories-btn"><span class="ic">☰</span><span class="lb">Story Manager</span></button>
+    <button class="nav" data-page="pipeline"><span class="ic">▦</span><span class="lb">Pipeline Board</span></button>
+    <button class="nav" data-page="delivery"><span class="ic">⬡</span><span class="lb">成果與預覽</span></button>
+    <button class="nav" data-page="skills"><span class="ic">✧</span><span class="lb">技能與記憶</span></button>
+    <button class="nav" data-page="api"><span class="ic">⚷</span><span class="lb">API 管理</span></button>
+    <button class="nav" data-page="settings"><span class="ic">⚙</span><span class="lb">設定</span></button>
+    <button class="nav" onclick="toast('Pipeline board — 016.3（demo 未含）')"><span class="ic">⇄</span><span class="lb">Pipeline</span></button>
+    <div class="grow"></div>
+    <div class="gates"><span class="gx">●●●●</span><span class="gl">gates 全關 (real_api · sudo · bypass · promote)</span></div>
+  </nav>
+
+  <div class="main">
+    <!-- ===== 頁面：開發主控台 ===== -->
+    <div class="page on" id="page-console">
+    <header class="header">
+      <div class="story">
+        <span class="sid" id="hd-sid">STORY-009.3</span>
+        <span class="obj" id="hd-obj">Planning bundle validation gate — 擋下 prose acceptance 與畸形 bundle</span>
+      </div>
+      <div class="hgrow"></div>
+      <div class="stat">attempt <b id="hd-att">1</b>/3 · tokens <b id="hd-tok">18.2k</b>/400k<br><span id="hd-state" style="color:var(--dev)">DEVELOP</span></div>
+      <div class="mode" role="group" aria-label="模式">
+        <button class="on" id="m-single">單一</button>
+        <button id="m-par">平行 2×2</button>
+      </div>
+    </header>
+
+    <div class="topbar">
+        <span style="color:var(--faint);font-family:var(--mono);font-size:10.5px">AGENTS</span>
+        <div class="agentlamps" id="agentlamps">
+          <span class="lamp r-ps" data-ag="ps"><span class="dot"></span>Planning</span>
+          <span class="lamp r-sup thinking" data-ag="sup"><span class="dot"></span>Supervisor</span>
+          <span class="lamp r-dev thinking" data-ag="dev"><span class="dot"></span>Developer</span>
+          <span class="lamp r-dbg" data-ag="dbg"><span class="dot"></span>Debugger</span>
+          <span class="lamp r-rev" data-ag="rev"><span class="dot"></span>Reviewer</span>
+          <span class="lamp r-as" data-ag="as"><span class="dot"></span>Assessor</span>
+        </div>
+        <div class="costbar">
+          <span class="amt" id="cost-amt">142k tok · $0.07</span>
+          <div class="track"><div class="fill" id="cost-fill" style="width:9%"></div></div>
+          <span class="cap">/ 1.5M · $5</span>
+        </div>
+      </div>
+      <div class="panes">
+      <!-- Supervisor（固定左）-->
+      <section class="pane p-sup">
+        <div class="pane-head"><span class="av">S</span><span class="nm">Supervisor</span><span class="sub">routes · narrates</span><span class="dot live" id="dot-sup"></span></div>
+        <div class="stream" id="st-sup" aria-live="polite"></div>
+      </section>
+
+      <!-- Developer + Debugger（同窗、切標籤）+ 底部 to-do -->
+      <section class="pane center" id="center">
+        <div class="single">
+          <div class="pane-head">
+            <div class="tabs" role="tablist">
+              <button class="t-dev on" id="tab-dev" role="tab">Developer<span class="blink"></span></button>
+              <button class="t-dbg" id="tab-dbg" role="tab">Debugger<span class="blink"></span></button>
+            </div>
+            <span class="sub" id="cyc">cycle 1</span>
+            <span class="dot live" id="dot-mid"></span>
+          </div>
+          <div class="stream" id="st-dev"></div>
+          <div class="stream" id="st-dbg" style="display:none"></div>
+          <div class="todo" id="todo">
+            <div class="th"><span>To-do · STORY-009.3</span><span class="ct" id="todo-ct">0/5</span></div>
+            <div id="todo-list"></div>
+          </div>
+        </div>
+        <div class="grid" id="grid"></div>
+      </section>
+
+      <!-- Reviewer（固定右）-->
+      <section class="pane p-rev">
+        <div class="pane-head"><span class="av">R</span><span class="nm">Reviewer</span><span class="sub">global · read-only</span><span class="dot" id="dot-rev"></span></div>
+        <div class="stream" id="st-rev"></div>
+      </section>
+
+      <!-- SYSTEM SPINE（harness 事件，最右）-->
+      <section class="pane p-spine">
+        <div class="pane-head"><span class="av">⊟</span><span class="nm">System Spine</span><span class="sub">harness</span></div>
+        <div class="spine-stream" id="st-spine"></div>
+      </section>
+    </div>
+
+    <!-- 單一底部輸入框 -->
+    <div class="inputbar">
+      <div class="owner" id="owner"><span class="odot"></span><span id="owner-nm">SUPERVISOR</span></div>
+      <div class="field" id="field">
+        <input id="inp" placeholder="問進度，或輸入「我想加…」觸發 Planning Steward 接管" autocomplete="off">
+        <button class="send" id="send">送出</button>
+      </div>
+    </div>
+    </div><!-- /page-console -->
+
+    <!-- ===== 頁面：Planning Steward / 規格討論 ===== -->
+    <div class="page" id="page-planning">
+      <div class="pg-wrap" style="display:flex;flex-direction:column;padding:18px 22px">
+        <div class="ps-top">
+          <div>
+            <div class="pg-title"><h2>規格討論</h2><span class="tag">Planning Steward · Human↔System 邊界</span></div>
+            <div class="pg-sub" style="margin:6px 0 0">用引導式選項一步步把想法變成規格。greenfield 從零發明；brownfield 先理解既有系統再改。</div>
+          </div>
+          <div class="modesw" role="group" aria-label="模式">
+            <button class="gf on" id="md-gf"><span>◇</span>Greenfield</button>
+            <button class="bf" id="md-bf"><span>⌂</span>Brownfield</button>
+          </div>
+        </div>
+        <div class="ps-grid">
+          <div class="ps-chat">
+            <div class="pch"><span class="av">P</span><span class="nm">Planning Steward</span><span class="ph" id="ps-mode-ph">greenfield · idea → backlog</span></div>
+            <div class="ps-stream" id="ps-stream"></div>
+            <div class="ps-free"><input id="ps-inp" placeholder="或直接打字描述…" autocomplete="off"><button id="ps-send">送出</button></div>
+          </div>
+          <div class="stepper" id="stepper">
+            <div class="sh"><span>規格流程</span><span class="md gf" id="step-mode">GREENFIELD</span></div>
+            <div id="steps"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== 頁面：Pipeline Board（Story Manager 合并）===== -->
+    <div class="page" id="page-pipeline">
+      <div class="pg-wrap" style="display:flex;flex-direction:column;padding:18px 22px">
+        <div class="pg-title"><h2>Pipeline Board</h2><span class="tag">run kanban · DAG · 准入控制（Story Manager）</span></div>
+        <div class="pg-sub">整個 run 的宏觀視圖：每個 story 在哪個階段、為什麼還不能進場、wave 怎麼排。這是只讀視圖——系統自動排程，你看全局、極少操作。</div>
+        <div class="pipe-wrap">
+          <div class="wave"><span style="color:var(--faint)">WAVE 排程：</span>
+            <span class="wv">W0 029.1</span><span class="wv">W1 029.2</span>
+            <span class="wv now">W2 029.3 ∥ 029.4</span><span class="wv">W3 029.5</span><span class="wv">W4 029.7</span>
+          </div>
+          <div class="lanes">
+            <div class="lane"><h4>Todo</h4>
+              <div class="scard"><div class="sc-id">029.5</div><div class="sc-t">repair proposal</div></div>
+              <div class="scard"><div class="sc-id">029.7</div><div class="sc-t">driver loop</div></div>
+            </div>
+            <div class="lane"><h4>In Progress</h4>
+              <div class="scard run"><div class="sc-id">029.3</div><div class="sc-t">producePatchProposal</div></div>
+              <div class="scard run"><div class="sc-id">029.4</div><div class="sc-t">debugger packet</div></div>
+            </div>
+            <div class="lane"><h4>Validating</h4>
+              <div class="scard"><div class="sc-id">029.2</div><div class="sc-t">developer packet</div></div>
+            </div>
+            <div class="lane"><h4>Blocked</h4>
+              <div class="scard blok"><div class="sc-id">029.8</div><div class="sc-t">live activation</div><div class="sc-why">gate closed · 需人類</div></div>
+            </div>
+            <div class="lane"><h4>Done</h4>
+              <div class="scard done"><div class="sc-id">029.1</div><div class="sc-t">askModel</div></div>
+            </div>
+          </div>
+          <div class="admit">
+            <h3>准入控制（為什麼這樣排）</h3>
+            <div class="admit-row"><span class="ar-sid">029.3</span><span class="ar-st ok">admitted</span><span class="ar-rsn">deps 滿足（029.2 done）· write-set: developer-runtime</span><span class="ar-act">hold</span></div>
+            <div class="admit-row"><span class="ar-sid">029.4</span><span class="ar-st ok">admitted</span><span class="ar-rsn">與 029.3 平行（write-set 不重疊：supervisor vs developer）</span><span class="ar-act">hold</span></div>
+            <div class="admit-row"><span class="ar-sid">029.6</span><span class="ar-st wait">waiting</span><span class="ar-rsn">write-set 與 029.4 重疊（同 supervisor-runtime）→ 排 029.4 之後</span><span class="ar-act">—</span></div>
+            <div class="admit-row"><span class="ar-sid">029.5</span><span class="ar-st wait">waiting</span><span class="ar-rsn">deps 未滿足：等 029.3 + 029.4</span><span class="ar-act">—</span></div>
+            <div class="admit-row"><span class="ar-sid">029.8</span><span class="ar-st hold">held</span><span class="ar-rsn">real_api_calls 閘門關閉（human-only）</span><span class="ar-act">—</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== 頁面：成果與預覽 ===== -->
+    <div class="page" id="page-delivery">
+      <div class="pg-wrap" style="display:flex;flex-direction:column;padding:18px 22px">
+        <div class="pg-title"><h2>成果與預覽</h2><span class="tag">delivery center · 生成專案的輸出端</span></div>
+        <div class="pg-sub">checkpoint 歷史、生成檔案、promotion 審核，以及右側的應用程式即時渲染。</div>
+        <div class="dl-grid">
+          <div class="dl-left">
+            <div class="sect"><h3>Checkpoints</h3>
+              <div class="ckpt"><span class="cn">✓</span><div class="ci"><span class="sid">STORY-009.3</span><small>bundle gate · 13/13 tests</small></div></div>
+              <div class="ckpt"><span class="cn">✓</span><div class="ci"><span class="sid">STORY-010.1</span><small>greenfield bootstrap · 8/8</small></div></div>
+              <div class="ckpt"><span class="cn">✓</span><div class="ci"><span class="sid">STORY-025.1</span><small>todo 核心服務 · 12/12</small></div></div>
+            </div>
+            <div class="sect"><h3>生成專案</h3>
+              <div class="panel"><div class="ftree"><span class="dir">todo-cli/</span><br>├─ <span class="dir">src/</span><br>│　├─ core.ts<br>│　├─ store.ts<br>│　└─ cli.ts<br>├─ <span class="dir">web/</span>　<span style="color:var(--ps)">← 前端展示</span><br>│　└─ index.html<br>└─ package.json</div></div>
+            </div>
+            <div class="sect"><h3>Promotion</h3>
+              <div class="panel promo">
+                <div class="pr"><span class="pk">evidence</span><span style="font-family:var(--mono);font-size:12px;color:var(--pass)">build ✓ test 33/33 ✓ typecheck ✓</span></div>
+                <div class="pr"><span class="pk">target</span><span style="font-family:var(--mono);font-size:12px;color:var(--dim)">local_stable_dir</span></div>
+                <div class="pr" style="gap:8px;margin-top:4px"><button class="pbtn ap" onclick="toast('promotion approved · 已記錄至 trace（demo）')">核准匯出</button><button class="pbtn rb" onclick="toast('rollback 完成 · workspace 不受影響（demo）')">回滾上次</button></div>
+                <small style="color:var(--faint);font-size:11px">stable_promotion gate 為人類專屬；此處核准即為人類動作本身。</small>
+              </div>
+            </div>
+          </div>
+          <div class="prev">
+            <div class="pvh"><span class="ti">App 預覽</span><span class="url" id="pv-url">sandbox://todo-cli/web · 隨 checkpoint 更新</span>
+              <div class="devsw"><button class="on" id="dv-d" title="桌面">🖥</button><button id="dv-t" title="平板">▯</button><button id="dv-m" title="手機">▭</button></div>
+            </div>
+            <div class="stage" id="pv-stage"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== 頁面：技能與記憶 ===== -->
+    <div class="page" id="page-skills">
+      <div class="pg-wrap">
+        <div class="pg-title"><h2>技能與記憶</h2><span class="tag">skill platform · failure bank · 全部過 014.1 閘</span></div>
+        <div class="pg-sub">每個 skill 的閘門狀態與 AVOID 記憶；下方是失敗基因庫與已配對的解法。UI 只能看，註冊永遠走測試閘。</div>
+        <div class="rolechips" id="rolechips">
+          <button class="rchip on r-all" data-r="all">全部</button><button class="rchip r-ps" data-r="ps">Planning</button>
+          <button class="rchip r-sup" data-r="sup">Supervisor</button><button class="rchip r-dev" data-r="dev">Developer</button>
+          <button class="rchip r-dbg" data-r="dbg">Debugger</button><button class="rchip r-rev" data-r="rev">Reviewer</button>
+        </div>
+        <div class="skgrid" id="skgrid"></div>
+        <div class="sect" style="margin-top:22px"><h3>Failure bank（基因 → 解法）</h3>
+          <div class="gene"><span class="gid">GENE-0042</span><span class="gtx">ambiguity-vs-malformed conflation</span><span class="rec">×3</span><span class="rmd">✓ direction#1：分流 blocked</span></div>
+          <div class="gene"><span class="gid">GENE-0038</span><span class="gtx">flaky timer in scheduler test</span><span class="rec">×5</span><span class="rmd">✓ fake timers</span></div>
+          <div class="gene"><span class="gid">GENE-0051</span><span class="gtx">write-set overlap on parallel spawn</span><span class="rec">×1</span><span class="rmd" style="background:var(--s3);color:var(--faint)">尚無解法</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== 頁面：API 管理 ===== -->
+    <div class="page" id="page-api">
+      <div class="pg-wrap">
+        <div class="pg-title"><h2>API 管理</h2><span class="tag">Model provider gateway · EPIC-011 / EPIC-018</span></div>
+        <div class="pg-sub">註冊模型 provider 與每個 agent 的路由。真實 provider 一律在 real_api_calls 人類閘門之後；CI 永遠只用 fixture provider。</div>
+
+        <div class="sect">
+          <h3>Providers</h3>
+          <div class="prov">
+            <span class="pic" style="background:var(--sys)">F</span>
+            <div class="info"><div class="nm">scripted-fixture</div><div class="meta">deterministic · no key · CI default</div></div>
+            <span class="st connected">connected</span><button class="act">設定</button>
+          </div>
+          <div class="prov">
+            <span class="pic" style="background:var(--sup)">C</span>
+            <div class="info"><div class="nm">Codex OAuth</div><div class="meta">browser sign-in · token via secret handle</div></div>
+            <span class="st gated">gated</span><button class="act" onclick="toast('需人類開啟 real_api_calls 閘門（11.4 runbook）')">登入</button>
+          </div>
+          <div class="prov">
+            <span class="pic" style="background:var(--dev)">A</span>
+            <div class="info"><div class="nm">Anthropic API</div><div class="meta">key via secret handle · 未設定</div></div>
+            <span class="st off">off</span><button class="act">新增</button>
+          </div>
+        </div>
+
+        <div class="sect">
+          <h3>每個 agent 的路由（hybrid 預設）</h3>
+          <div class="route"><span class="ag" style="color:var(--dev)">Developer</span><span class="arr">→ tier</span><select><option>strong</option><option>cheap</option></select></div>
+          <div class="route"><span class="ag" style="color:var(--dbg)">Debugger</span><span class="arr">→ tier</span><select><option>strong</option><option>cheap</option></select></div>
+          <div class="route"><span class="ag" style="color:var(--rev)">Reviewer</span><span class="arr">→ tier</span><select><option>cross-model（不同 provider）</option><option>same</option></select></div>
+          <div class="route"><span class="ag" style="color:var(--sup)">Supervisor</span><span class="arr">→ tier</span><select><option>scripted（先不接真模型）</option><option>strong</option></select></div>
+          <div class="route"><span class="ag" style="color:var(--ps)">Planning</span><span class="arr">→ tier</span><select><option>scripted</option><option>strong</option></select></div>
+        </div>
+
+        <div class="sect">
+          <h3>預算守衛</h3>
+          <div class="panel" style="display:flex;gap:24px;font-family:var(--mono);font-size:12.5px;color:var(--dim)">
+            <div>per-story <b style="color:var(--text)">400k</b> tokens</div>
+            <div>per-story <b style="color:var(--text)">30</b> calls</div>
+            <div>超額 → <b style="color:var(--gate)">escalate</b></div>
+            <div>kill switch <b style="color:var(--fail)">ready</b></div>
+          </div>
+        </div>
+
+        <div class="gatewarn"><span style="font-size:16px">⚠</span><div><b>real_api_calls 目前關閉。</b>開啟需人類依 11.4 runbook 手動確認並記錄於 trace。在此之前所有 agent 都跑 fixture provider，跨模型 Reviewer 也是 fixture——這個閘門與本頁設定互相獨立。</div></div>
+      </div>
+    </div>
+
+    <!-- ===== 頁面：設定（三層）===== -->
+    <div class="page" id="page-settings">
+      <div class="pg-wrap">
+        <div class="pg-title"><h2>設定</h2><span class="tag">三層：runtime（可調）· 架構（鎖定）· 全域閘門（唯讀）</span></div>
+        <div class="pg-sub">設定只能放寬成本／品質，永遠不能弱化信任邊界。能開啟全域閘門的東西刻意不可被設定表達。</div>
+
+        <div class="setlayer">
+          <div class="lh"><span class="num">1</span><b>Runtime 參數</b><span class="hint">隨時可調 · settings.yaml · EPIC-021</span></div>
+          <div class="setrow"><span class="key">parallelism.max_workers<small>平行模式同時開幾個 worker</small></span><input type="number" value="4"></div>
+          <div class="setrow"><span class="key">review.trigger<small>何時呼叫 Reviewer 診斷</small></span><div class="seg"><button>每次失敗</button><button class="on">第二次失敗</button><button>關</button></div></div>
+          <div class="setrow"><span class="key">review.cross_model<small>用不同模型評審（防錨定）</small></span><div class="seg"><button class="on">開</button><button>關</button></div></div>
+          <div class="setrow"><span class="key">quality_bar.greenfield<small>生成專案的驗收標準</small></span><div class="seg"><button>build+test</button><button class="on">＋typecheck</button><button>＋coverage</button></div></div>
+        </div>
+
+        <div class="setlayer">
+          <div class="lh"><span class="num">2</span><b>一次性架構抉擇</b><span class="hint">可見但鎖定 · 改動需 migration 確認</span></div>
+          <div class="setrow locked"><span class="key">target.project_type<small>首次 checkpoint 後鎖定</small></span><span class="val" style="font-family:var(--mono);font-size:12px;color:var(--dim);margin-right:10px">cli_tool</span><span class="locktag">🔒 已鎖定</span></div>
+          <div class="setrow locked"><span class="key">target.stack<small>技術棧</small></span><span class="val" style="font-family:var(--mono);font-size:12px;color:var(--dim);margin-right:10px">node_ts</span><span class="locktag">🔒 已鎖定</span></div>
+          <div class="setrow ro"><span class="key">failure_bank.scope<small>失敗基因庫範圍</small></span><span class="val">global</span></div>
+        </div>
+
+        <div class="setlayer layer-gate">
+          <div class="lh"><span class="num">3</span><b>全域閘門</b><span class="hint">唯讀 · 永遠由人類操作 · 不是設定</span></div>
+          <div class="setrow ro"><span class="key">real_api_calls</span><span class="val" style="color:var(--fail)">OFF（human-only）</span></div>
+          <div class="setrow ro"><span class="key">sudo_broker_runtime</span><span class="val" style="color:var(--fail)">OFF</span></div>
+          <div class="setrow ro"><span class="key">bypass_workspace_runtime</span><span class="val" style="color:var(--fail)">OFF</span></div>
+          <div class="setrow ro"><span class="key">stable_promotion</span><span class="val" style="color:var(--fail)">OFF</span></div>
+        </div>
+      </div>
+    </div>
+
+    </div><!-- /main -->
+</div><!-- /app -->
+
+<!-- Story Manager drawer -->
+<aside class="drawer" id="drawer" aria-label="Story Manager">
+  <div class="dh"><b>Story Manager</b><button class="x" id="dx">✕</button></div>
+  <div class="db">
+    <p class="dnote">准入控制器：依賴 ✓ ＋ 無 hold ＋ wave 開放 ＋ WIP 未滿 ＋ write-set 不重疊。Hold 需人類確認；Supervisor 只能提議。</p>
+    <div id="srows"></div>
+  </div>
+</aside>
+
+<div class="confirm" id="confirm">
+  <div class="box">
+    <b id="cf-t">確認 hold？</b>
+    <p id="cf-p"></p>
+    <div class="acts"><button class="no" id="cf-no">取消</button><button class="ok" id="cf-ok">確認 hold</button></div>
+  </div>
+</div>
+<div class="toast" id="toastEl"></div>
+
+<script>
+/* ───────────── helpers ───────────── */
+const $=id=>document.getElementById(id);
+const esc=s=>s.replace(/&/g,'&amp;').replace(/</g,'&lt;');
+function line(pane,who,cls,html){
+  const el=document.createElement('span');el.className='ln '+(cls||'');
+  el.innerHTML=`<span class="who w-${who}">${who}</span>▸ ${html}`;
+  pane.appendChild(el);pane.scrollTop=pane.scrollHeight;return el;}
+function think(pane,who,text){
+  const el=document.createElement('div');el.className='think';
+  el.innerHTML=`<span class="who w-${who}" style="font-size:11px">${who} thinking</span><span class="heart">⏳ 等待中…<span class="sec">0s</span></span><div class="ticker">${esc(text)}</div>`;
+  // 模拟延迟心跳：3.5s 后若没有「新 token」就标记 stalled 并计秒
+  let secs=0;
+  const stallTimer=setTimeout(()=>{
+    el.classList.add('stalled');
+    el._tick=setInterval(()=>{secs++;const s=el.querySelector('.sec');if(s)s.textContent=secs+'s';},1000);
+  },3500);
+  el._clearStall=()=>{clearTimeout(stallTimer);if(el._tick)clearInterval(el._tick);el.classList.remove('stalled');};
+  el.onclick=()=>{el.classList.toggle('open');if(el._clearStall)el._clearStall();};
+  pane.appendChild(el);pane.scrollTop=pane.scrollHeight;return el;}
+function card(pane,cls,html){const el=document.createElement('div');el.className='card '+cls;el.innerHTML=html;
+  pane.appendChild(el);pane.scrollTop=pane.scrollHeight;return el;}
+function toast(m){const t=$('toastEl');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2400)}
+
+/* SYSTEM SPINE 事件（harness：gateway/validator/workspace）*/
+function spine(cls,ico,html,res){
+  const el=document.createElement('div');el.className='sp '+(cls||'');
+  el.innerHTML=`<span class="ico">${ico}</span><span class="tx">${html}${res?` <span class="res ${cls==='bad'?'bad':''}">${res}</span>`:''}</span>`;
+  SPINE.appendChild(el);SPINE.scrollTop=SPINE.scrollHeight;return el;}
+
+/* agent 互呼叫 prompt：摘要一行 + hover 全文 */
+function callPrompt(pane,from,to,summary,full){
+  const el=document.createElement('div');el.className='callln';
+  el.innerHTML=`<span class="ar">↳ <span class="w-${from}">${from}</span>→<span class="w-${to}">${to}</span></span>`+
+    `<span class="sm">${summary}</span>`+
+    `<span class="full"><span class="ph">prompt · ${from} → ${to}</span>${esc(full)}</span>`;
+  pane.appendChild(el);pane.scrollTop=pane.scrollHeight;return el;}
+
+/* 改動檔案 diff（Claude-Code 風）*/
+function diff(pane,file,adds,dels,rows){
+  const el=document.createElement('div');el.className='diff';
+  let body=rows.map(r=>{
+    const t=r[0]==='+'?'add':r[0]==='-'?'del':'ctx';
+    const g=r[0]==='+'?'+':r[0]==='-'?'-':' ';
+    return `<span class="dl ${t}"><span class="gut">${g}</span>${esc(r.slice(1))}</span>`;}).join('');
+  el.innerHTML=`<div class="fh"><span class="fp">${file}</span>`+
+    (adds?`<span class="adds">+${adds}</span>`:'')+(dels?`<span class="dels">−${dels}</span>`:'')+`</div><div class="body">${body}</div>`;
+  pane.appendChild(el);pane.scrollTop=pane.scrollHeight;return el;}
+
+/* Developer/Debugger 底部 to-do（隨動畫打勾）*/
+const TODO=[
+ 'localize：在 specConformanceGate 後掛 bundle gate',
+ 'patch：bundleGate.ts（prose / malformed 偵測）',
+ 'preflight：typecheck + 受影響測試',
+ '分流 ambiguity → blocked（採 Reviewer direction #1）',
+ 'validate 全綠 → checkpoint',
+];
+function renderTodo(){
+  const w=$('todo-list');w.innerHTML='';
+  TODO.forEach((t,i)=>{const r=document.createElement('div');r.className='ti';r.id='todo-'+i;
+    r.innerHTML=`<span class="box">✓</span><span class="tt">${t}</span>`;w.appendChild(r);});
+}
+function todoSet(i,state){
+  const r=$('todo-'+i);if(!r)return;r.className='ti '+state;
+  const done=document.querySelectorAll('#todo-list .ti.done').length;
+  $('todo-ct').textContent=`${done}/${TODO.length}`;}
+
+const SUP=$('st-sup'),DEV=$('st-dev'),DBG=$('st-dbg'),REV=$('st-rev'),SPINE=$('st-spine');
+renderTodo();
+
+/* tabs */
+function showTab(which){
+  $('tab-dev').classList.toggle('on',which==='dev');$('tab-dbg').classList.toggle('on',which==='dbg');
+  DEV.style.display=which==='dev'?'':'none';DBG.style.display=which==='dbg'?'':'none';
+  $('tab-'+which).classList.remove('alert');}
+$('tab-dev').onclick=()=>showTab('dev');$('tab-dbg').onclick=()=>showTab('dbg');
+function alertTab(which){const t=$('tab-'+which);if(!t.classList.contains('on'))t.classList.add('alert');}
+
+/* ───────────── 單一模式：示範時間軸 ─────────────
+   對應後端機制：select→contract→develop→preflight→validate(fail)
+   →debugger→reviewer 診斷(ranked directions)→repair→pass→checkpoint
+   →Story Manager 准入下一個                                            */
+const script=[
+ [400 ,()=>{line(SUP,'sup','', `select <b style="color:var(--dev)">STORY-009.3</b>　<span class="dim">(deps done · no hold · wave 1)</span>`);
+            spine('ok','▸','story-manager <b>admit</b> 009.3','ok');}],
+ [800 ,()=>card(SUP,'',`<h4>contract</h4>
+   <div class="row"><span class="k">objective</span><span>bundle gate：擋 prose acceptance／畸形 bundle</span></div>
+   <div class="row"><span class="k">write-set</span><span class="chips"><span class="chip">validator-suite/src/</span><span class="chip">planning-steward/src/</span></span></div>
+   <div class="row"><span class="k">forbidden</span><span class="chips"><span class="chip no">real API</span><span class="chip no">sudo</span><span class="chip no">secrets</span></span></div>`)],
+ [600 ,()=>{callPrompt(SUP,'sup','dev','實作 009.3 bundle gate，限 write-set 內，附測試',
+   '你是 Developer。Story STORY-009.3：在 validator-suite 為 planning bundle 加驗證閘。Acceptance：malformed_bundle_rejected、prose_acceptance_rejected、ambiguity_blocks_until_answered。只能改 validator-suite/src/、planning-steward/src/。產出最小、可回滾、附測試的 patch proposal。禁止真 API／sudo／讀 secrets。');
+   todoSet(0,'doing');}],
+ [600 ,()=>think(DEV,'dev','在 specConformance 後掛 validateBundle()。prose 偵測重用 006.1 的 yaml 檢查；ambiguity 未答則回傳 blocked。最小 diff：新增 bundleGate.ts + 兩個測試。')],
+ [1100,()=>{line(DEV,'dev','tool',`tool: <span class="cmd">codegraph.lookup("specConformanceGate")</span> → <span class="ok">1 def · 3 refs</span>`);
+            spine('ok','⚷','gateway <b>allow</b> codegraph.lookup','ok');todoSet(0,'done');todoSet(1,'doing');}],
+ [900 ,()=>{line(DEV,'dev','',`patch proposal · additive, reversible`);
+   diff(DEV,'validator-suite/src/bundleGate.ts',84,0,[
+    ' export function validateBundle(b: Bundle): Verdict {',
+    '+  if (b.acceptance.kind === "prose")',
+    '+    return reject("prose_acceptance");',
+    '+  if (!schemaOk(b)) return reject("malformed_bundle");',
+    '+  if (b.openAmbiguities.length)',
+    '+    return blocked("ambiguity_unanswered");',
+    '   return pass();',
+    ' }']);
+   diff(DEV,'validator-suite/src/index.ts',6,1,[
+    '-  return specConformance(b);',
+    '+  const sc = specConformance(b);',
+    '+  if (!sc.ok) return sc;',
+    '+  return validateBundle(b);']);}],
+ [800 ,()=>{line(DEV,'dev','tool',`tool: <span class="cmd">preflight.run --affected</span> → <span class="ok">typecheck ✓ · 11/11 ✓</span>`);
+            spine('ok','▣','workspace <b>apply</b> (disposable)','ok');spine('ok','✓','preflight typecheck + tests','ok');todoSet(1,'done');todoSet(2,'doing');}],
+ [700 ,()=>{line(SUP,'sup','dim',`spec-conformance gate ✓ → validate`);spine('gate','◆','spec-conformance <b>gate</b>','pass');$('hd-state').textContent='VALIDATE';$('hd-state').style.color='var(--pass)';}],
+ [1100,()=>{line(DEV,'val','tool',`tool: <span class="cmd">pnpm test validator-suite</span> → <span class="bad">FAIL 1/13</span>`);
+            spine('bad','✕','validator 1/13','fail');$('hd-state').textContent='DEBUG';$('hd-state').style.color='var(--dbg)';$('hd-att').textContent='2';todoSet(2,'done');}],
+ [600 ,()=>{callPrompt(SUP,'sup','dbg','validate 失敗，分診本次 diff 並提最小修復',
+   '你是 Debugger。STORY-009.3 第 1 次 validate 失敗：ambiguity_blocks_until_answered。只看本次 diff 與此失敗（局部）。請 triage、發 failure gene、提出 write-set 內的最小修復建議。不得改 story 目標或驗收。');alertTab('dbg');}],
+ [700 ,()=>{showTab('dbg');think(DBG,'dbg','局部視角：assertion 期望 status=blocked，實得 rejected。bundleGate 把「未答歧義」和「畸形」走了同一條路。最小修復：分流。先發 gene。');}],
+ [1000,()=>{line(DBG,'dbg','',`failure gene → <code>GENE-0042</code> <span class="dim">ambiguity-vs-malformed conflation</span>`);
+            spine('ok','🧬','failure-bank <b>bankGene</b> 0042','ok');}],
+ [800 ,()=>{line(SUP,'sup','dim',`review.trigger=on_second_failure → route reviewer`);
+            callPrompt(SUP,'sup','rev','診斷此失敗，給排序改進方向（你看不到實作歷史）',
+   '你是 Reviewer（唯讀、防錨定）。輸入僅：失敗測試輸出、acceptance、受審 diff、GENE-0042。不得取得 Developer/Debugger 的推理或被否決方案。輸出 diagnosis_report v2：分類、排序 root-cause、排序 improvement_directions、do_not_touch、global findings。');$('dot-rev').classList.add('live');}],
+ [600 ,()=>think(REV,'rev','全域：escalation schema(006.2) 已定義 blocked 語意，bundleGate 自創 rejected。違反「歧義→結構化升級」既有路徑。')],
+ [1500,()=>card(REV,'diag',`<h4>diagnosis report v2 · reviewer_model: scripted-B</h4>
+   <div class="row"><span class="k">class</span><span>contract_mismatch <b style="color:var(--rev)">conf 0.86</b></span></div>
+   <div class="row"><span class="k">directions</span><span><ol>
+     <li>未答歧義回傳 <code>blocked</code> 並掛 escalation(006.2)<b>建議優先</b></li>
+     <li>替 ambiguity 路徑補獨立 fixture</li></ol></span></div>
+   <div class="row"><span class="k">global</span><span class="chips"><span class="chip">consistency: escalation schema 偏離</span><span class="chip">regression: 009.1 intake</span></span></div>
+   <div class="row"><span class="k">do not touch</span><span class="chips"><span class="chip no">prose 偵測</span><span class="chip no">006.1 gate</span></span></div>`)],
+ [700 ,()=>{callPrompt(SUP,'sup','dbg','採用 Reviewer direction #1 重修',
+   '診斷已就緒。請依 improvement_directions 第 1 項：未答歧義回傳 blocked 並掛 escalation(006.2)，與既有 schema 對齊。遵守 do_not_touch：勿動 prose 偵測與 006.1 gate。修復需在 write-set 內。');todoSet(3,'doing');}],
+ [800 ,()=>{line(DBG,'dbg','',`採用 direction <b>#1</b>　<span class="dim">repair within write-set ✓</span>`);
+   diff(DBG,'validator-suite/src/bundleGate.ts',3,1,[
+    '-  if (b.openAmbiguities.length)',
+    '-    return reject("malformed_bundle");',
+    '+  if (b.openAmbiguities.length)',
+    '+    return blocked("ambiguity_unanswered",',
+    '+      escalation(b));']);}],
+ [900 ,()=>{line(DBG,'val','tool',`tool: <span class="cmd">pnpm test validator-suite</span> → <span class="ok">PASS 13/13</span>`);
+            spine('ok','✓','validator 13/13','pass');todoSet(3,'done');todoSet(4,'doing');}],
+ [600 ,()=>{line(SUP,'sup','',`validate <span style="color:var(--pass)">pass</span> → <b style="color:var(--pass)">checkpoint</b> 009.3`);
+            spine('gate','◆','checkpoint commit 009.3','ok');$('hd-state').textContent='CHECKPOINT';$('hd-state').style.color='var(--pass)';todoSet(4,'done');}],
+ [700 ,()=>line(REV,'rev','dim',`remedy paired: GENE-0042 ↔ direction#1 → failure bank（學會解法，不只記得痛）`)],
+ [900 ,()=>{line(SUP,'sup','',`story manager: admit <b style="color:var(--dev)">STORY-010.1</b>　<span class="dim">(wave 1 · WIP 1/4 · overlap ✗)</span>`);
+            line(SUP,'sys','dim',`— demo 循環結束。試試底下輸入框，或切「平行 2×2」—`);$('dot-rev').classList.remove('live');}],
+];
+let acc=300;script.forEach(([d,f])=>{acc+=d;setTimeout(f,acc)});
+
+/* ───────────── 輸入框：路由 + 接管 ───────────── */
+const ownerEl=$('owner'),ownerNm=$('owner-nm'),fieldEl=$('field');
+let takeover=false,qStep=0;
+function setOwner(ps){takeover=ps;ownerEl.classList.toggle('ps',ps);fieldEl.classList.toggle('ps',ps);
+  ownerNm.textContent=ps?'PLANNING STEWARD':'SUPERVISOR';
+  $('inp').placeholder=ps?'回答 Planning Steward 的問題…':'問進度，或輸入「我想加…」觸發接管';}
+function send(){
+  const v=$('inp').value.trim();if(!v)return;$('inp').value='';
+  line(SUP,'you','gate',esc(v));
+  if(takeover){handleTakeoverAnswer(v);return;}
+  if(/我想|新增|加一?個|加功能/.test(v)){startTakeover(v);return;}
+  if(/進度|狀態|story|哪個|多少|預算|卡/.test(v)){
+    setTimeout(()=>line(SUP,'sup','',`narrate（讀 tracker）：009.3 <span style="color:var(--pass)">checkpointed</span> · 010.1 develop 中 · backlog 106 · 預算 18.2k/400k · gates 全關`),500);
+  }else{
+    setTimeout(()=>line(SUP,'sup','dim',`此主控台只討論專題內容（進度、story、預算、gate）。要新增需求請說「我想加…」。`),500);
+  }}
+function startTakeover(v){
+  setTimeout(()=>{setOwner(true);qStep=1;
+    line(SUP,'sys','dim','—— scope_change_request → Planning Steward 接管 ——');
+    line(SUP,'ps','',`收到。歧義確認（1/2）：這個功能給<b>誰</b>用？匯出格式只要 CSV 嗎？`);},450);}
+function handleTakeoverAnswer(v){
+  if(qStep===1){qStep=2;setTimeout(()=>line(SUP,'ps','',`了解（2/2）：要進<b>哪個 wave</b>？預設排在 wave 2、不搶佔進行中 story。輸入任何文字確認。`),450);return;}
+  qStep=0;
+  setTimeout(()=>{
+    line(SUP,'ps','dim',`backlog delta → bundle gate(009.3) <span style="color:var(--pass)">✓</span> → tracker transaction → event: backlog_updated`);
+    card(SUP,'hb',`<h4>handback · 交還 Supervisor</h4>
+      <div class="row"><span class="k">new story</span><span class="chips"><span class="chip new">STORY-025.1 匯出 CSV</span><span class="chip">todo · wave 2</span></span></div>
+      <div class="row"><span class="k">原則</span><span style="font-size:12.5px;color:var(--dim)">不搶佔；依依賴排隊；交接物=tracker，無側信道</span></div>`);
+    setOwner(false);
+    setTimeout(()=>line(SUP,'sup','',`tracker 已更新 → 已納入 <b style="color:var(--dev)">STORY-025.1</b>，story manager 重算准入。`),700);
+  },500);}
+$('send').onclick=send;$('inp').addEventListener('keydown',e=>{if(e.key==='Enter')send()});
+
+/* ───────────── 平行 2×2 grid ───────────── */
+const cells=[
+ {id:'STORY-010.1',tt:'greenfield bootstrap'},{id:'STORY-010.2',tt:'sequential scheduler'},
+ {id:'STORY-011.3',tt:'budget guard'},{id:'STORY-006.3',tt:'preflight self-check'}];
+const cellLogs=[
+ ['dev ▸ scaffold target repo','tool ▸ git init → ✓','dev ▸ patch +workspace.bootstrap()','val ▸ 8/8 ✓ → review'],
+ ['dev ▸ task-graph order','dev ▸ patch +scheduler.ts','val ▸ FAIL 1/9','dbg ▸ direction#1 修復中'],
+ ['dev ▸ read policy caps','tool ▸ preflight ✓','dev ▸ patch +budgetGuard','val ▸ 12/12 ✓ → review'],
+ ['dev ▸ runPreflight impl','dbg ▸ flaky? rerun','val ▸ 6/6 ✓ → review','sup ▸ checkpoint queued']];
+function buildGrid(){
+  const g=$('grid');g.innerHTML='';
+  cells.forEach((c,i)=>{
+    const el=document.createElement('div');el.className='cell';el.dataset.i=i;
+    el.innerHTML=`<div class="ch"><span class="cid">${c.id}</span><span style="color:var(--dim)">${c.tt}</span><span class="st">dev+debug</span></div><div class="cb"></div>`;
+    el.onclick=()=>zoomCell(i);g.appendChild(el);});
+  const chips=document.createElement('div');chips.className='chipsrow';g.appendChild(chips);}
+let gridTimers=[];
+function playGrid(){
+  stopGrid();
+  document.querySelectorAll('#grid .cell').forEach((el,i)=>{
+    const cb=el.querySelector('.cb');cb.innerHTML='';let k=0;
+    const tick=()=>{
+      if(k<cellLogs[i].length){
+        cb.innerHTML+=`<span class="ts" style="color:var(--faint);font-size:10px">${ts()}</span> ${cellLogs[i][k]}<br>`;k++;
+        if(k===cellLogs[i].length){
+          el.classList.add('review');el.querySelector('.st').textContent='→ reviewer';
+          setTimeout(()=>{
+            line(REV,'rev','dim',`review queue ← ${cells[i].id}（on_cycle_complete）→ verdict to supervisor`);
+            el.classList.remove('review');el.classList.add('done');el.querySelector('.st').textContent='checkpointed ✓';
+            line(SUP,'sup','dim',`${cells[i].id} checkpoint · story manager admit next → cell ${i+1}`);
+          },1400+i*500);
+        }
+      }};
+    for(let s=0;s<cellLogs[i].length;s++)gridTimers.push(setTimeout(tick,800+s*1300+i*450));});}
+function stopGrid(){gridTimers.forEach(clearTimeout);gridTimers=[]}
+function zoomCell(i){
+  const g=$('grid');const zoomed=g.classList.contains('zoomed');
+  if(zoomed){g.classList.remove('zoomed');g.querySelectorAll('.cell').forEach(c=>c.classList.remove('zoom'));g.querySelector('.chipsrow').innerHTML='';return;}
+  g.classList.add('zoomed');const target=g.querySelector(`.cell[data-i="${i}"]`);target.classList.add('zoom');
+  const chips=g.querySelector('.chipsrow');chips.innerHTML='';
+  cells.forEach((c,j)=>{if(j!==i){const ch=document.createElement('span');ch.className='chip';ch.textContent=c.id;
+    ch.onclick=e=>{e.stopPropagation();zoomCell(-1);zoomCell(j)};chips.appendChild(ch);}});
+  toast('再點一次放大的格子可返回 2×2');}
+$('m-par').onclick=()=>{
+  $('m-par').classList.add('on');$('m-single').classList.remove('on');
+  $('center').classList.add('parallel');buildGrid();playGrid();
+  line(SUP,'sup','dim','parallel mode：write-set overlap 預檢 ✓ → spawn 4 workers（worktree 隔離）');};
+$('m-single').onclick=()=>{
+  $('m-single').classList.add('on');$('m-par').classList.remove('on');
+  $('center').classList.remove('parallel');stopGrid();};
+
+/* ───────────── Story Manager drawer ───────────── */
+const stories=[
+ {id:'010.1',tt:'Greenfield bootstrap',st:'develop',lock:null},
+ {id:'010.2',tt:'Sequential scheduler',st:'todo',lock:'OVERLAP 010.1'},
+ {id:'011.1',tt:'Provider auth',st:'todo',lock:'WAVE 2 closed'},
+ {id:'013.2',tt:'E2E real provider',st:'todo',lock:'GATED · manual'},
+ {id:'016.1',tt:'Live trace wiring',st:'todo',lock:null},
+];
+function renderStories(){
+  const w=$('srows');w.innerHTML='';
+  stories.forEach(s=>{
+    const r=document.createElement('div');r.className='srow'+(s.held?' held':'');
+    r.innerHTML=`<span class="id">STORY-${s.id}</span><span class="tt">${s.tt}</span>`+
+      (s.lock?`<span class="chip lock">🔒 ${s.lock}</span>`:'')+
+      `<button class="hold">${s.held?'release':'hold'}</button>`;
+    r.querySelector('.hold').onclick=()=>askHold(s);
+    w.appendChild(r);});}
+let pending=null;
+function askHold(s){pending=s;$('cf-t').textContent=(s.held?'確認 release？':'確認 hold？');
+  $('cf-p').textContent=`STORY-${s.id} ${s.tt} — ${s.held?'解除後重新進入准入計算。':'hold 之後 story manager 將拒絕准入，直到人類 release。Supervisor 只能提議，這個確認就是人類 gate。'}`;
+  $('confirm').classList.add('open');}
+$('cf-ok').onclick=()=>{pending.held=!pending.held;$('confirm').classList.remove('open');
+  line(SUP,'sup','dim',`story manager: ${pending.held?'hold':'release'} STORY-${pending.id}（human confirmed · trace event）`);renderStories();};
+$('cf-no').onclick=()=>$('confirm').classList.remove('open');
+
+/* ───────────── rail 收合（預設收起）+ 頁面切換 ───────────── */
+$('burger').onclick=()=>$('app').classList.toggle('rail-open');
+const pages={console:'page-console',planning:'page-planning',pipeline:'page-pipeline',delivery:'page-delivery',skills:'page-skills',api:'page-api',settings:'page-settings'};
+function gotoPage(p){
+  Object.values(pages).forEach(id=>$(id).classList.remove('on'));
+  $(pages[p]).classList.add('on');
+  document.querySelectorAll('.rail .nav').forEach(b=>b.classList.toggle('on',b.dataset.page===p));
+  $('drawer').classList.remove('open');
+}
+document.querySelectorAll('.rail .nav[data-page]').forEach(b=>b.onclick=()=>gotoPage(b.dataset.page));
+$('nav-stories-btn').onclick=()=>{$('drawer').classList.add('open');renderStories();
+  document.querySelectorAll('.rail .nav').forEach(b=>b.classList.remove('on'));$('nav-stories-btn').classList.add('on');};
+$('dx').onclick=()=>{$('drawer').classList.remove('open');gotoPage('console');};
+
+/* ───────────── Planning Steward 頁：引導式 + 縱向節點 + 雙模式 ───────────── */
+const psStream=$('ps-stream');
+const FLOWS={
+  gf:{label:'GREENFIELD',ph:'greenfield · idea → backlog',
+    steps:[['意圖','你想做什麼'],['釐清歧義','對象 / 範圍'],['PRD','需求草稿'],['架構','元件與分層'],['前端展示','可選 · 026.1'],['切 story','可驗收 backlog'],['bundle gate','機器驗證'],['交接 Supervisor','tracker transaction']]},
+  bf:{label:'BROWNFIELD',ph:'brownfield · 先理解再改',
+    steps:[['匯入 repo','唯讀載入'],['as-is 恢復','架構 + 依賴圖'],['釐清歧義','含「既有行為是否刻意」'],['delta spec','對既有 symbol 的差異'],['影響面','CodeGraph impact set'],['前端展示','可選 · 026.1'],['bundle gate','零新增失敗保證'],['交接 Supervisor','tracker transaction']]},
+};
+/* 全域:預覽生命週期狀態('pending' | 'none' | 'live'),由 Planning 選擇驅動(026.3)*/
+window.PV_STATE='pending'; window.PV_SKIP_IDX=null;
+let psMode='gf', psStep=0, psFlow=FLOWS.gf;
+
+function renderSteps(){
+  const w=$('steps');w.innerHTML='';
+  psFlow.steps.forEach((s,i)=>{
+    let st=i<psStep?'done':i===psStep?'active':'';
+    if(window.PV_SKIP_IDX===i) st='done skip';
+    const el=document.createElement('div');el.className='step '+st;
+    el.innerHTML=`<div class="node">${i<psStep?'✓':i+1}</div><div class="rail"></div>`+
+      `<div class="ct"><div class="nm">${s[0]}</div><div class="ds">${s[1]}</div></div>`;
+    w.appendChild(el);});
+  $('stepper').className='stepper '+psMode;
+  $('step-mode').className='md '+psMode;$('step-mode').textContent=psFlow.label;
+}
+function advance(){if(psStep<psFlow.steps.length){psStep++;renderSteps();}}
+
+function psSay(html,opts){
+  const m=document.createElement('div');m.className='ps-msg ps-b';
+  m.innerHTML=`<div class="lbl">Planning Steward</div><div class="b">${html}</div>`;
+  psStream.appendChild(m);
+  if(opts){const g=document.createElement('div');g.className='guide';
+    opts.forEach(o=>{const b=document.createElement('button');b.className='gopt';
+      b.innerHTML=`<span class="gi">${o.i}</span><span class="gt"><b>${o.t}</b>${o.s?`<small>${o.s}</small>`:''}</span><span class="gk">選擇</span>`;
+      b.onclick=()=>{psStream.querySelectorAll('.guide').forEach(x=>x.remove());psMe(o.t);o.go();};
+      g.appendChild(b);});
+    m.querySelector('.b').appendChild(g);}
+  psStream.scrollTop=psStream.scrollHeight;
+}
+function psMe(t){const m=document.createElement('div');m.className='ps-msg me';
+  m.innerHTML=`<div class="lbl">你</div><div class="b">${esc(t)}</div>`;psStream.appendChild(m);psStream.scrollTop=psStream.scrollHeight;}
+
+/* greenfield 引導腳本 */
+function gfFlow(){
+  psStep=0;renderSteps();psStream.innerHTML='';
+  psSay('要從零打造什麼？挑一個方向，或直接打字描述。',[
+    {i:'▤',t:'CLI 工具',s:'命令列程式',go:gf2},
+    {i:'◰',t:'Web 應用',s:'前端 + 後端',go:gf2},
+    {i:'⇆',t:'REST API 服務',s:'純後端介面',go:gf2},
+  ]);
+}
+function gf2(){advance();setTimeout(()=>psSay('了解。釐清歧義（1/2）：主要<b>給誰</b>用？',[
+  {i:'☺',t:'一般使用者',go:gf3},{i:'⚙',t:'管理員',go:gf3},{i:'{}',t:'開發者（API）',go:gf3},
+]),360);}
+function gf3(){advance();setTimeout(()=>psSay('（2/2）資料規模？這會影響架構與是否要拆多個 story。',[
+  {i:'·',t:'小型 / 單機',go:gfAskFE},{i:'≡',t:'中型 / 需資料庫',go:gfAskFE},
+]),360);}
+function gfAskFE(){
+  advance();// PRD
+  setTimeout(()=>{psSay('PRD 草稿完成。推導架構中…');advance();},420);
+  setTimeout(()=>psSay('架構就緒。要加入<b>前端展示階段</b>嗎？選「要」會多生一個 showcase story，完成後可在「成果與預覽」頁即時渲染。',[
+    {i:'▶',t:'要，加入前端展示',s:'生成 showcase story',go:()=>{window.PV_STATE='pending';window.PV_SKIP_IDX=null;gfDone();}},
+    {i:'∅',t:'不要',s:'此專案無前端開發階段',go:()=>{window.PV_STATE='none';window.PV_SKIP_IDX=4;gfDone();}},
+  ]),1200);
+}
+function gfDone(){
+  advance();// 前端展示節點(完成或略過)
+  setTimeout(()=>{psSay((window.PV_STATE==='none'?'已記錄：此專案<b>無前端開發階段</b>。':'已加入 showcase story（STORY-026.x）。')+'開始切 story。');advance();},420);
+  setTimeout(()=>{psSay('已切出 backlog：<br><b style="color:var(--ps)">STORY-025.1</b> 核心服務 + 寫出器<br><b style="color:var(--ps)">STORY-025.2</b> CLI 觸發 + 輸出　<span style="color:var(--faint);font-size:12px">deps 025.1 · yaml acceptance</span>');advance();},1300);
+  setTimeout(()=>{psSay('送 bundle gate…<br><span class="gatechip" style="display:inline-flex;align-items:center;gap:6px;font-family:var(--mono);font-size:11px;padding:5px 12px;border-radius:999px;background:rgba(142,224,170,.13);color:var(--pass);margin-top:6px">✓ passed · 無 prose · 依賴無環</span>');advance();},2200);
+  setTimeout(()=>{psSay('以 tracker transaction 交給 Supervisor：狀態 todo、排入 wave 2、不搶佔進行中 story。<b>完成。</b>');advance();},3100);
+}
+
+/* brownfield 引導腳本 */
+function bfFlow(){
+  psStep=0;renderSteps();psStream.innerHTML='';
+  psSay('要改既有的哪個專案？我會先唯讀匯入、恢復 as-is，再規劃 delta。',[
+    {i:'⎘',t:'匯入 sample-repo',s:'demo 用既有 Node/TS 專案',go:bf2},
+    {i:'⌥',t:'貼上 repo 路徑',s:'手動指定',go:bf2},
+  ]);
+}
+function bf2(){advance();// as-is 恢復
+  setTimeout(()=>{psSay('唯讀匯入完成。恢復 as-is：12 模組、3 層、依賴圖已建。');advance();},700);
+  setTimeout(()=>psSay('釐清歧義：你要改的<b>既有行為</b>是刻意的嗎？這決定要不要保留相容。',[
+    {i:'✓',t:'刻意，需相容',s:'public API 凍結',go:bf3},
+    {i:'✕',t:'是 bug，可改',go:bf3},
+  ]),1400);
+}
+function bf3(){advance();// delta spec
+  setTimeout(()=>{psSay('產出 delta spec：對既有 <code>ExportService.write()</code> 的差異，public API 凍結。');advance();},500);
+  setTimeout(()=>{psSay('CodeGraph 影響面：觸及 2 檔、1 個下游呼叫點。write-set 已收斂到最小。');advance();},1300);
+  setTimeout(()=>psSay('目標含 web 介面。要加入<b>前端展示階段</b>嗎？',[
+    {i:'▶',t:'要',go:()=>{window.PV_STATE='pending';window.PV_SKIP_IDX=null;advance();bfGate();}},
+    {i:'∅',t:'不要',go:()=>{window.PV_STATE='none';window.PV_SKIP_IDX=5;advance();bfGate();}},
+  ]),2100);
+}
+function bfGate(){
+  setTimeout(()=>{psSay('送 bundle gate（brownfield：要求<b>零新增測試失敗</b>）…<br><span style="display:inline-flex;gap:6px;font-family:var(--mono);font-size:11px;padding:5px 12px;border-radius:999px;background:rgba(255,191,134,.14);color:#ffbf86;margin-top:6px">✓ passed · baseline 已捕捉 · 影響面 ≤ write-set</span>');advance();},500);
+  setTimeout(()=>{psSay('交給 Supervisor：repair-style story（task_class: brownfield），排入佇列。<b>完成。</b>');advance();},1300);
+}
+
+function setMode(m){
+  psMode=m;psFlow=FLOWS[m];
+  $('md-gf').classList.toggle('on',m==='gf');$('md-bf').classList.toggle('on',m==='bf');
+  $('ps-mode-ph').textContent=psFlow.ph;
+  (m==='gf'?gfFlow:bfFlow)();
+}
+$('md-gf').onclick=()=>setMode('gf');
+$('md-bf').onclick=()=>setMode('bf');
+$('ps-send').onclick=()=>{const v=$('ps-inp').value.trim();if(!v)return;$('ps-inp').value='';
+  psStream.querySelectorAll('.guide').forEach(x=>x.remove());psMe(v);
+  (psMode==='gf'?gf2:bf2)();};
+$('ps-inp').addEventListener('keydown',e=>{if(e.key==='Enter')$('ps-send').click()});
+/* ───────────── v5 helpers：debug 收敛 / Assessor 印章 / ASCII 报告 ───────────── */
+function debugConv(pane, attempt, budget, dir){
+  const el=document.createElement('div');
+  const danger = attempt>=budget;
+  el.className='debugconv'+(danger?' danger':'');
+  el.innerHTML=`🔧 debug <span class="att">嘗試 ${attempt}/${budget}</span> · ${esc(dir)}`+(danger?' · ⚠ 將 escalate':'');
+  pane.appendChild(el); scrollPane(pane); return el;
+}
+function assessorStamp(pane, verdict, evidence){
+  const el=document.createElement('div');
+  const cls = verdict==='pass'?'pass':verdict==='fail'?'fail':'pending';
+  const ic = verdict==='pass'?'✓ Assessor 通過':verdict==='fail'?'✗ Assessor 未達':'… Assessor 評估中';
+  el.className='stamp '+cls; el.textContent=ic;
+  el.onclick=()=>{ if(el._open){el._open.remove();el._open=null;return;}
+    const rep=document.createElement('div'); rep.className='ascii'; rep.textContent=evidence; el.after(rep); el._open=rep; };
+  pane.appendChild(el); scrollPane(pane); return el;
+}
+function asciiReport(pane, who, title, body){
+  const h=document.createElement('div'); h.className='msg';
+  h.innerHTML=`<span class="who w-${who}" style="font-size:11px">${who}</span> <span style="color:var(--faint);font-size:11px">${esc(title)}</span>`;
+  pane.appendChild(h);
+  const a=document.createElement('div'); a.className='ascii'; a.textContent=body; pane.appendChild(a); scrollPane(pane);
+}
+function scrollPane(p){ if(p) p.scrollTop=p.scrollHeight; }
+
+/* 顶部 agent 灯 + 成本条动态 */
+function setLamp(ag, state){ // state: idle|thinking|waiting|done
+  const l=document.querySelector(`#agentlamps .lamp[data-ag="${ag}"]`);
+  if(!l) return; l.classList.remove('thinking','waiting','done'); if(state!=='idle') l.classList.add(state);
+}
+function bumpCost(tok){
+  const cap=1500000; window._tok=(window._tok||142000)+tok;
+  const pct=Math.min(100, window._tok/cap*100);
+  const fill=$('cost-fill'), amt=$('cost-amt');
+  if(fill){ fill.style.width=pct+'%'; fill.classList.toggle('warn', pct>75); }
+  if(amt){ const usd=(window._tok/1e6*4.5).toFixed(2); amt.textContent=`${Math.round(window._tok/1000)}k tok · $${usd}`; }
+}
+
+/* ───────────── 成果與預覽:三狀態(026.3)+ HTML 渲染(026.2)───────────── */
+const GEN_APP=[
+'<!DOCTYPE html><html><head><meta charset="UTF-8"><style>',
+'body{font-family:system-ui;margin:0;background:#f4f4f8;color:#1b1b22}',
+'.bar{background:#5b4f86;color:#fff;padding:14px 18px;font-weight:700}',
+'.wrap{max-width:430px;margin:22px auto;padding:0 14px}',
+'.add{display:flex;gap:8px}.add input{flex:1;padding:11px 14px;border:1px solid #ccc;border-radius:10px;font-size:14px}',
+'.add button{background:#5b4f86;color:#fff;border:0;border-radius:10px;padding:0 18px;font-weight:600;cursor:pointer}',
+'ul{list-style:none;padding:0}li{display:flex;align-items:center;gap:10px;background:#fff;border-radius:10px;padding:11px 13px;margin:8px 0;box-shadow:0 1px 3px rgba(0,0,0,.08)}',
+'li.d span{text-decoration:line-through;color:#999}li input{width:17px;height:17px}',
+'.ft{text-align:center;color:#999;font-size:12px;margin-top:18px}',
+'</style></head><body><div class="bar">📋 Todo — generated by CodeHarness</div><div class="wrap">',
+'<div class="add"><input id="i" placeholder="新增待辦…"><button onclick="add()">＋</button></div><ul id="l"></ul>',
+'<div class="ft">rendered from sandbox preview · STORY-026.x checkpoint</div></div><script>',
+'const L=document.getElementById("l");let T=[["完成 bundle gate",1],["實作核心服務",1],["前端展示頁",0]];',
+'function rd(){L.innerHTML="";T.forEach((x,i)=>{const li=document.createElement("li");if(x[1])li.className="d";',
+'li.innerHTML=`<input type=checkbox ${x[1]?"checked":""} onchange="T[${i}][1]^=1;rd()"><span>${x[0]}</span>`;L.appendChild(li)})}',
+'function add(){const v=document.getElementById("i").value.trim();if(v){T.push([v,0]);document.getElementById("i").value="";rd()}}rd();',
+'<\/script></body></html>'].join('\n');
+
+function renderPreview(){
+  const st=$('pv-stage');
+  if(window.PV_STATE==='none'){
+    st.innerHTML='<div class="empty"><div class="big">∅</div><b>該專案並無前端開發階段</b><p>規格討論時選擇了「不要」。若改變主意，回到規格討論用 Planning Steward 補一個 showcase story 即可——一樣走 bundle gate。</p></div>';
+  }else if(window.PV_STATE==='pending'){
+    st.innerHTML='<div class="empty"><div class="big">◔</div><b>還沒進入前端開發階段</b><p>showcase story（STORY-026.x）尚未 checkpoint。完成後此處會自動渲染生成的應用程式。</p><button class="act" onclick="window.PV_STATE=\'live\';renderPreview();toast(\'showcase story checkpoint → 預覽已更新（demo）\')">▶ 模擬 showcase checkpoint</button></div>';
+  }else{
+    st.innerHTML='';const f=document.createElement('iframe');
+    f.setAttribute('sandbox','allow-scripts');f.srcdoc=GEN_APP;st.appendChild(f);
+  }
+}
+['dv-d','dv-t','dv-m'].forEach(id=>{$(id).onclick=()=>{
+  ['dv-d','dv-t','dv-m'].forEach(x=>$(x).classList.toggle('on',x===id));
+  $('pv-stage').className='stage '+(id==='dv-t'?'t':id==='dv-m'?'m':'');};});
+
+/* ───────────── 技能與記憶頁 ───────────── */
+const SKILLS=[
+ ['ps','idea-to-epic','意圖→epic 的拆解 SOP','reg',null],
+ ['ps','machine-checkable-acceptance','驗收必為 yaml 可驗','reg',null],
+ ['sup','decision-matrix-routing','develop/debug/escalate 路由','reg',null],
+ ['sup','parallel-set-selection','write-set 重疊分析','reg',null],
+ ['dev','patch-proposal','最小、可回滾、附測試','reg',null],
+ ['dev','crud-web-app-template','Vite+React 起手範本','reg',null],
+ ['dbg','root-cause-analysis','bisect / stack trace SOP','reg',null],
+ ['dbg','flaky-test-detection','重跑鑑別真假失敗','qua','AVOID：勿在 CI 重跑超過 2 次——曾掩蓋真實 race condition'],
+ ['rev','improvement-direction-authoring','排序可行方向','reg',null],
+ ['rev','what-not-to-change-guardrails','do-not-touch 約束','reg',null],
+];
+const RNAME={ps:'Planning',sup:'Supervisor',dev:'Developer',dbg:'Debugger',rev:'Reviewer'};
+function renderSkills(filter){
+  const g=$('skgrid');g.innerHTML='';
+  SKILLS.filter(s=>filter==='all'||s[0]===filter).forEach(s=>{
+    const el=document.createElement('div');el.className='sk';
+    el.innerHTML=`<div class="skh"><span class="who w-${s[0]}" style="font-size:11px">${RNAME[s[0]]}</span><b>${s[1]}</b>`+
+      `<span class="gs ${s[3]}">${s[3]==='reg'?'registered':'quarantined'}</span></div><small>${s[2]}</small>`+
+      (s[4]?`<div class="avoid">⚠ ${s[4]}</div>`:'');
+    g.appendChild(el);});
+}
+document.querySelectorAll('#rolechips .rchip').forEach(b=>b.onclick=()=>{
+  document.querySelectorAll('#rolechips .rchip').forEach(x=>x.classList.remove('on'));
+  b.classList.add('on');renderSkills(b.dataset.r);});
+
+/* ───────────── v5 新视觉化：自动演示（接进迴圈）───────────── */
+function v5Showcase(){
+  // 顶部灯 + 成本条随时间变化
+  let step=0;
+  const lampSeq=[
+    ()=>{setLamp('sup','thinking');setLamp('dev','thinking');},
+    ()=>{bumpCost(8000);},
+    ()=>{setLamp('dev','waiting');},          // dev 等 api
+    ()=>{bumpCost(5000);setLamp('dev','thinking');},
+    ()=>{setLamp('dev','done');setLamp('dbg','thinking');bumpCost(12000);},
+    ()=>{setLamp('dbg','done');setLamp('rev','thinking');},
+    ()=>{setLamp('rev','done');setLamp('as','thinking');bumpCost(6000);},
+    ()=>{setLamp('as','done');},
+  ];
+  const iv=setInterval(()=>{ if(step>=lampSeq.length){clearInterval(iv);return;} lampSeq[step++](); },1400);
+
+  // 在 Reviewer pane 放 ASCII 诊断报告
+  const revPane=document.querySelector('.pane.p-rev .pane-body')||document.querySelector('.pane.p-rev');
+  if(revPane){
+    setTimeout(()=>asciiReport(revPane,'rev','診斷報告',
+`┌─ direction ──────────────┬─ priority ─┬─ confidence ─┐
+│ 拆 store.ts 的 cache 邏輯 │    high    │     0.82     │
+│ 補 add 的參數驗證         │    med     │     0.71     │
+│ done-state 邊界測試       │    low     │     0.55     │
+└──────────────────────────┴────────────┴──────────────┘
+do-not-touch: cli.ts 的 arg parser（已通過）`),9000);
+  }
+  // 在 Supervisor pane 放 ASCII 路由表
+  const supPane=document.querySelector('.pane.p-sup .pane-body')||document.querySelector('.pane.p-sup');
+  if(supPane){
+    setTimeout(()=>asciiReport(supPane,'sup','路由決策',
+`┌─ story ──┬─ route ───┬─ reason ─────────────┐
+│ 029.3    │ developer │ ready · deps met     │
+│ 029.4    │ developer │ parallel-safe        │
+│ 029.6    │ wait      │ write-set overlap    │
+└──────────┴───────────┴──────────────────────┘`),4000);
+  }
+}
+window.addEventListener('load',()=>setTimeout(v5Showcase,1200));
+
+/* 首次進 planning 頁時初始化 */
+let psInit=false;
+const _goto=gotoPage;
+gotoPage=function(p){_goto(p);
+  if(p==='planning'&&!psInit){psInit=true;setMode('gf');}
+  if(p==='delivery')renderPreview();
+  if(p==='skills')renderSkills('all');};
+</script>
+
+<!-- ── GateLoop live-data layer (wires v5 to @gateloop/api; demo is the offline fallback) ── -->
+<script>
+(function(){
+  // Tauri webview, file://, or vite :5173 → the API runs on 8787. CORS is open (allow-origin:*).
+  const API = window.__GATELOOP_API__ || 'http://127.0.0.1:8787';
+  const ROLE = { supervisor:['st-sup','sup'], planning_steward:['st-sup','ps'],
+                 developer:['st-dev','dev'], debugger:['st-dbg','dbg'],
+                 reviewer:['st-rev','rev'], assessor:['st-rev','rev'] };
+  const RC = { planning_steward:'ps', supervisor:'sup', developer:'dev', debugger:'dbg', reviewer:'rev', assessor:'as' };
+  const RNAME = { ps:'Planning', sup:'Supervisor', dev:'Developer', dbg:'Debugger', rev:'Reviewer', as:'Assessor' };
+  const byId = id=>document.getElementById(id);
+  const escp = s=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;');
+  function iconFor(t){ t=(t||'').toLowerCase();
+    if(/fail|reject|error|deni|blocked/.test(t)) return ['bad','✗'];
+    if(/pass|checkpoint|accept|done|verified|green|ok\b/.test(t)) return ['ok','✓'];
+    if(/gate|escalat|human|await|approval|hold/.test(t)) return ['gate','⏸'];
+    return ['','·']; }
+
+  // Once LIVE, neutralise the v5 demo's console emitters so no demo line bleeds in between polls.
+  let demoKilled=false;
+  function killDemo(){ if(demoKilled) return; demoKilled=true;
+    ['v5Showcase','asciiReport','line','spine','think','card','diff','callPrompt','playGrid']
+      .forEach(fn=>{ try{ window[fn]=function(){return null;}; }catch(e){} });
+  }
+
+  function clearPanes(){ ['st-sup','st-dev','st-dbg','st-rev','st-spine'].forEach(id=>{const e=byId(id);if(e)e.innerHTML='';}); }
+  function renderTrace(events){
+    clearPanes();
+    const SPINE=byId('st-spine');
+    for(const ev of events){
+      const sid = ev.story_id ? `<span style="color:var(--faint)">[${escp(ev.story_id)}]</span> ` : '';
+      const sum = escp(ev.summary||ev.type||'');
+      const m = ROLE[ev.agent_role];
+      if(m){ const p=byId(m[0]); if(p){ const ln=document.createElement('span'); ln.className='ln';
+        ln.innerHTML=`<span class="who w-${m[1]}">${m[1]}</span>▸ ${sid}${sum}`; p.appendChild(ln); p.scrollTop=p.scrollHeight; } }
+      if(SPINE){ const [cls,ico]=iconFor(ev.type||ev.event_type); const sp=document.createElement('div'); sp.className='sp '+cls;
+        sp.innerHTML=`<span class="ico">${ico}</span><span class="tx"><b>${escp(ev.type||'')}</b> ${sid}${sum}</span>`;
+        SPINE.appendChild(sp); SPINE.scrollTop=SPINE.scrollHeight; } }
+  }
+
+  // Agent lamps ← /api/agents (present agents lit, absent dimmed).
+  function renderLamps(ids){ const present=new Set(ids.map(i=>RC[i]).filter(Boolean));
+    document.querySelectorAll('#agentlamps .lamp').forEach(l=>{ const on=present.has(l.dataset.ag);
+      l.classList.remove('thinking'); l.style.opacity = on?'1':'.3'; }); }
+
+  // Skills page ← /api/skills. Overrides v5's renderSkills so role chips + nav use live data.
+  let skillsCache=null;
+  async function liveSkills(filter){
+    const g=byId('skgrid'); if(!g) return;
+    if(!skillsCache){ try{ skillsCache=((await (await fetch(API+'/api/skills')).json()).skills)||[]; }catch(e){ skillsCache=[]; } }
+    g.innerHTML='';
+    skillsCache.filter(s=>{ const rc=RC[s.agent_role]||'sup'; return filter==='all'||rc===filter; }).forEach(s=>{
+      const rc=RC[s.agent_role]||'sup';
+      const name=(s.skill_id||'').includes('.') ? s.skill_id.split('.').slice(1).join('.') : s.skill_id;
+      const reg = s.status==='registered'; const cls = reg?'reg':'qua';
+      const el=document.createElement('div'); el.className='sk';
+      el.innerHTML=`<div class="skh"><span class="who w-${rc}" style="font-size:11px">${RNAME[rc]||rc}</span>`+
+        `<b>${escp(name)}</b><span class="gs ${cls}">${escp(s.status||'')}</span></div>`+
+        `<small>${escp((s.description||'').slice(0,150))}</small>`+
+        (s.version?`<div class="avoid" style="background:none;color:var(--faint)">v${escp(s.version)}${(s.depends_on&&s.depends_on.length)?' · deps '+s.depends_on.length:''}</div>`:'');
+      g.appendChild(el); });
+  }
+
+  function badge(live,n){
+    let b=byId('gl-live'); if(!b){ b=document.createElement('div'); b.id='gl-live';
+      b.style.cssText='position:fixed;top:15px;right:20px;z-index:70;font-family:var(--mono);font-size:11px;padding:5px 11px;border-radius:999px;display:flex;align-items:center;gap:7px;pointer-events:none';
+      document.body.appendChild(b); }
+    if(live){ b.style.background='rgba(142,224,170,.14)'; b.style.color='var(--pass)';
+      b.innerHTML=`<span style="width:7px;height:7px;border-radius:50%;background:var(--pass);box-shadow:0 0 8px var(--pass)"></span>LIVE · api:8787 · ${n} events`; }
+    else { b.style.background='rgba(255,217,138,.12)'; b.style.color='var(--gate)';
+      b.innerHTML=`<span style="width:7px;height:7px;border-radius:50%;background:var(--gate)"></span>DEMO · api offline`; }
+  }
+
+  let live=false;
+  async function poll(){
+    try{
+      const ctl=new AbortController(); const to=setTimeout(()=>ctl.abort(),2500);
+      const [tr,pf,ag]=await Promise.all([
+        fetch(API+'/api/trace',{signal:ctl.signal}).then(r=>r.json()),
+        fetch(API+'/api/platform',{signal:ctl.signal}).then(r=>r.json()).catch(()=>null),
+        fetch(API+'/api/agents',{signal:ctl.signal}).then(r=>r.json()).catch(()=>null),
+      ]); clearTimeout(to);
+      if(Array.isArray(tr)){
+        if(!live){ live=true; killDemo(); window.renderSkills = liveSkills; skillsCache=null; }
+        renderTrace(tr); badge(true,tr.length);
+        if(pf){ const o=byId('hd-obj'); if(o) o.textContent=`${pf.name} · ${pf.packages} packages · ${pf.skills} skills · ${pf.states} states`;
+          const s=byId('hd-sid'); if(s) s.textContent='LIVE'; }
+        if(ag&&ag.agents) renderLamps(ag.agents.map(a=>a.id));
+        if(byId('skgrid')) liveSkills(document.querySelector('#rolechips .rchip.on')?.dataset.r||'all');
+      }
+    }catch(e){ if(!live) badge(false); }
+  }
+  // Go live ASAP; refresh at 1.5s to overwrite the demo's load burst; then steady poll.
+  window.addEventListener('load',()=>{ poll(); setTimeout(poll,1500); setInterval(poll,4000); });
+})();
+</script>
+</body>
+</html>
