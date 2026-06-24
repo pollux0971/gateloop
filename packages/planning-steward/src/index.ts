@@ -52,6 +52,10 @@ export {
   nextStep,
 } from './docskill.js';
 
+// STORY-PSKILL.3: completion checker (checklist.md → passed/total).
+export type { ChecklistItem, ChecklistResult } from './checklist.js';
+export { parseChecklist, evaluateChecklist } from './checklist.js';
+
 export type IdeaMode = 'greenfield' | 'brownfield' | 'patch' | 'checkpoint' | 'research_spike';
 
 export interface IdeaInput {
