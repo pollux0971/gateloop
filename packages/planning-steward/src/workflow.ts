@@ -220,3 +220,125 @@ export function loadPlanningWorkflowFile(filePath: string): PlanningWorkflowConf
   }
   return parsePlanningWorkflow(text);
 }
+
+// ════════════════════════════════════════════════════════════════════════════
+// STORY-PFLOW.3 — Workflow state machine (per-stage status + order enforcement)
+//
+// Deterministic engine over the loaded stages. Tracks each stage's status
+// (todo/active/done), exposes a flow-state snapshot, and ENFORCES order: exactly
+// one stage is active at a time and a stage may only become active after its
+// predecessor is done. Pure: every transition returns a NEW state; no Date, no
+// randomness, no I/O → same inputs always yield the same state. No checklist
+// gating yet (EPIC-PSKILL adds that on top via completeStage wiring). This is
+// flow/quality logic, NOT an access gate (ADR-0013 operator-trust).
+// ════════════════════════════════════════════════════════════════════════════
+
+/** Per-stage status in the workflow lifecycle. */
+export type StageStatus = 'todo' | 'active' | 'done';
+
+/** A stage plus its live status — the unit of the flow-state snapshot. */
+export interface FlowStageSnapshot extends PlanningWorkflowStage {
+  status: StageStatus;
+}
+
+/** The live workflow state: ordered stages + a parallel status array. */
+export interface PlanningFlowState {
+  mode: string;
+  label: string;
+  stages: PlanningWorkflowStage[];
+  statuses: StageStatus[]; // statuses[i] is the status of stages[i]
+}
+
+/** Thrown on an illegal state transition (e.g. activating out of order). */
+export class PlanningWorkflowStateError extends Error {
+  constructor(message: string) {
+    super(`planning_workflow_state: ${message}`);
+    this.name = 'PlanningWorkflowStateError';
+  }
+}
+
+/**
+ * Initialise the flow from a parsed config: the first stage is `active`, every
+ * other stage is `todo`. (The config loader guarantees a non-empty stage list.)
+ */
+export function initFlowState(config: PlanningWorkflowConfig): PlanningFlowState {
+  if (config.stages.length === 0) {
+    throw new PlanningWorkflowStateError('cannot initialise flow with zero stages');
+  }
+  const statuses: StageStatus[] = config.stages.map((_, i) => (i === 0 ? 'active' : 'todo'));
+  return {
+    mode: config.mode,
+    label: config.label,
+    stages: config.stages.map((s) => ({ ...s })),
+    statuses,
+  };
+}
+
+/** The flow-state snapshot: [{ id, name, desc, skill, status }] in stage order. */
+export function flowSnapshot(state: PlanningFlowState): FlowStageSnapshot[] {
+  return state.stages.map((s, i) => ({ ...s, status: state.statuses[i] }));
+}
+
+/** Index of the single `active` stage, or -1 when the flow is complete. */
+export function activeIndex(state: PlanningFlowState): number {
+  return state.statuses.indexOf('active');
+}
+
+/** True once every stage is `done` (no active stage remains). */
+export function isComplete(state: PlanningFlowState): boolean {
+  return state.statuses.every((s) => s === 'done');
+}
+
+/**
+ * Whether stage `i` may legally become active: it must be `todo` and every
+ * preceding stage must be `done`. This is the order-enforcement predicate the
+ * PFLOW.4 barrier proves bites.
+ */
+export function canActivate(state: PlanningFlowState, i: number): boolean {
+  if (i < 0 || i >= state.stages.length) return false;
+  if (state.statuses[i] !== 'todo') return false;
+  return state.statuses.slice(0, i).every((s) => s === 'done');
+}
+
+/**
+ * Activate stage `i`, enforcing order. THROWS (never silently no-ops) when the
+ * predecessor is not yet done / the stage is not `todo` / `i` is out of range.
+ * @throws PlanningWorkflowStateError
+ */
+export function activateStage(state: PlanningFlowState, i: number): PlanningFlowState {
+  if (i < 0 || i >= state.stages.length) {
+    throw new PlanningWorkflowStateError(`stage index ${i} out of range (0..${state.stages.length - 1})`);
+  }
+  if (state.statuses[i] === 'active') {
+    throw new PlanningWorkflowStateError(`stage '${state.stages[i].id}' is already active`);
+  }
+  if (state.statuses[i] === 'done') {
+    throw new PlanningWorkflowStateError(`stage '${state.stages[i].id}' is already done`);
+  }
+  const firstNotDone = state.statuses.slice(0, i).findIndex((s) => s !== 'done');
+  if (firstNotDone !== -1) {
+    throw new PlanningWorkflowStateError(
+      `cannot activate stage '${state.stages[i].id}': predecessor '${state.stages[firstNotDone].id}' is '${state.statuses[firstNotDone]}', not 'done'`,
+    );
+  }
+  const statuses = [...state.statuses];
+  statuses[i] = 'active';
+  return { ...state, stages: state.stages.map((s) => ({ ...s })), statuses };
+}
+
+/**
+ * Advance the flow: mark the currently active stage `done` and activate the
+ * next stage (if any). When the last stage advances, the flow becomes complete
+ * (zero active). THROWS if there is no active stage (already complete).
+ * @throws PlanningWorkflowStateError
+ */
+export function advance(state: PlanningFlowState): PlanningFlowState {
+  const ai = activeIndex(state);
+  if (ai === -1) {
+    throw new PlanningWorkflowStateError('flow is already complete; no active stage to advance');
+  }
+  const statuses = [...state.statuses];
+  statuses[ai] = 'done';
+  if (ai + 1 < statuses.length) statuses[ai + 1] = 'active';
+  return { ...state, stages: state.stages.map((s) => ({ ...s })), statuses };
+}
