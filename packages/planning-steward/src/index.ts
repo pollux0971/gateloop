@@ -72,6 +72,25 @@ export { runPlanningDryRun, checkStoryGranularity } from './dryrun.js';
 export type { AuthorPromptInput, AuthorPrompt } from './authorprompt.js';
 export { buildAuthorPrompt } from './authorprompt.js';
 
+// STORY-PLLM.3: StageDocAuthor seam — scripted default (offline) + real impl (opt-in,
+// injects the provider-driver engine + secret-broker key seam).
+export type {
+  AuthorContext,
+  AuthorSkill,
+  StageDocAuthor,
+  AuthorEngine,
+  AuthorEnginePart,
+  RealAuthorDeps,
+  AuthorSelect,
+  SelectAuthorDeps,
+} from './authorseam.js';
+export {
+  StageDocAuthorError,
+  createScriptedAuthor,
+  createRealAuthor,
+  selectStageDocAuthor,
+} from './authorseam.js';
+
 export type IdeaMode = 'greenfield' | 'brownfield' | 'patch' | 'checkpoint' | 'research_spike';
 
 export interface IdeaInput {
