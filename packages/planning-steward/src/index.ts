@@ -30,6 +30,18 @@ export {
   assertStageOrderingBarrier,
 } from './workflow.js';
 
+// STORY-PSKILL.1: doc-authoring skill loader (separate registry from EPIC-014).
+export type {
+  DocSkillFrontmatter,
+  DocSkillStep,
+  DocSkill,
+} from './docskill.js';
+export {
+  DocSkillLoadError,
+  parseSkillFrontmatter,
+  loadDocSkill,
+} from './docskill.js';
+
 export type IdeaMode = 'greenfield' | 'brownfield' | 'patch' | 'checkpoint' | 'research_spike';
 
 export interface IdeaInput {
