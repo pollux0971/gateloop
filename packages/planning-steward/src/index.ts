@@ -68,6 +68,10 @@ export { assertCompletionBarrier } from './completionbarrier.js';
 export type { DryRunStageResult, DryRunResult, DryRunOptions } from './dryrun.js';
 export { runPlanningDryRun, checkStoryGranularity } from './dryrun.js';
 
+// STORY-PLLM.2: author-prompt builder (deterministic, offline; the LLM-authoring core).
+export type { AuthorPromptInput, AuthorPrompt } from './authorprompt.js';
+export { buildAuthorPrompt } from './authorprompt.js';
+
 export type IdeaMode = 'greenfield' | 'brownfield' | 'patch' | 'checkpoint' | 'research_spike';
 
 export interface IdeaInput {
