@@ -21,6 +21,7 @@
  * access or security gate.
  */
 import * as fs from 'node:fs';
+import type { ChecklistResult, ChecklistItem } from './checklist.js';
 
 /** One ordered planning stage. `skill` is null when the stage has no BMAD skill. */
 export interface PlanningWorkflowStage {
@@ -239,14 +240,21 @@ export type StageStatus = 'todo' | 'active' | 'done';
 /** A stage plus its live status — the unit of the flow-state snapshot. */
 export interface FlowStageSnapshot extends PlanningWorkflowStage {
   status: StageStatus;
+  // STORY-PSKILL.4: per-stage checklist progress (null until a checklist is
+  // recorded for the stage). These are the exact fields the frontend node-flow needs.
+  checklist_passed: number | null;
+  checklist_total: number | null;
 }
 
-/** The live workflow state: ordered stages + a parallel status array. */
+/** The live workflow state: ordered stages + parallel status + checklist arrays. */
 export interface PlanningFlowState {
   mode: string;
   label: string;
   stages: PlanningWorkflowStage[];
   statuses: StageStatus[]; // statuses[i] is the status of stages[i]
+  // STORY-PSKILL.4: checklists[i] is the last recorded ChecklistResult for stages[i]
+  // (null until one is recorded). Carries checklist_passed/total into the snapshot.
+  checklists: Array<ChecklistResult | null>;
 }
 
 /** Thrown on an illegal state transition (e.g. activating out of order). */
@@ -271,12 +279,25 @@ export function initFlowState(config: PlanningWorkflowConfig): PlanningFlowState
     label: config.label,
     stages: config.stages.map((s) => ({ ...s })),
     statuses,
+    checklists: config.stages.map(() => null),
   };
 }
 
-/** The flow-state snapshot: [{ id, name, desc, skill, status }] in stage order. */
+/**
+ * The flow-state snapshot: [{ id, name, desc, skill, status, checklist_passed,
+ * checklist_total }] in stage order. checklist_passed/total are null until a
+ * checklist is recorded for the stage (PSKILL.4).
+ */
 export function flowSnapshot(state: PlanningFlowState): FlowStageSnapshot[] {
-  return state.stages.map((s, i) => ({ ...s, status: state.statuses[i] }));
+  return state.stages.map((s, i) => {
+    const cl = state.checklists?.[i] ?? null;
+    return {
+      ...s,
+      status: state.statuses[i],
+      checklist_passed: cl ? cl.passed : null,
+      checklist_total: cl ? cl.total : null,
+    };
+  });
 }
 
 /** Index of the single `active` stage, or -1 when the flow is complete. */
@@ -323,7 +344,7 @@ export function activateStage(state: PlanningFlowState, i: number): PlanningFlow
   }
   const statuses = [...state.statuses];
   statuses[i] = 'active';
-  return { ...state, stages: state.stages.map((s) => ({ ...s })), statuses };
+  return { ...state, stages: state.stages.map((s) => ({ ...s })), statuses, checklists: [...state.checklists] };
 }
 
 /**
@@ -340,7 +361,7 @@ export function advance(state: PlanningFlowState): PlanningFlowState {
   const statuses = [...state.statuses];
   statuses[ai] = 'done';
   if (ai + 1 < statuses.length) statuses[ai + 1] = 'active';
-  return { ...state, stages: state.stages.map((s) => ({ ...s })), statuses };
+  return { ...state, stages: state.stages.map((s) => ({ ...s })), statuses, checklists: [...state.checklists] };
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -437,4 +458,81 @@ export function assertStageOrderingBarrier(config: PlanningWorkflowConfig): Stag
     );
   }
   return { refusedOutOfOrder, noWrapOrCorruptOnOverAdvance, neverTwoActive, allHeld };
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// STORY-PSKILL.4 — Stage-done on checklist: wire completion into PFLOW state
+//
+// Adds the checklist condition to the active→done transition ONLY — the PFLOW.3
+// ordering (predecessor-done activation, exactly-one-active, no wrap) is reused
+// untouched. A stage may advance to `done` only when its checklist is complete
+// (all items pass); otherwise the advance is REFUSED with the failing-item list,
+// leaving status/ordering unchanged. The evaluated checklist is recorded on the
+// stage either way, so the snapshot carries checklist_passed/checklist_total.
+// Quality control on the OUTPUT, not an access gate (ADR-0013).
+// ════════════════════════════════════════════════════════════════════════════
+
+/** Result of a checklist-gated advance attempt. */
+export interface GatedAdvanceResult {
+  advanced: boolean; // true iff the stage transitioned active→done
+  from: string; // id of the (attempted) active stage
+  to: string | null; // id of the next activated stage, or null (flow complete) / unchanged
+  state: PlanningFlowState; // new state (checklist recorded on the active stage)
+  checklist: ChecklistResult; // the evaluation used for the decision
+  failingItems: ChecklistItem[]; // items that did not pass ([] when advanced)
+}
+
+/**
+ * Record a checklist evaluation for stage `i` WITHOUT changing status/ordering.
+ * Pure — returns a new state. Lets a live UI surface checklist progress for the
+ * active stage before advancing.
+ * @throws PlanningWorkflowStateError if `i` is out of range
+ */
+export function setStageChecklist(state: PlanningFlowState, i: number, result: ChecklistResult): PlanningFlowState {
+  if (i < 0 || i >= state.stages.length) {
+    throw new PlanningWorkflowStateError(`stage index ${i} out of range (0..${state.stages.length - 1})`);
+  }
+  const checklists = [...state.checklists];
+  checklists[i] = result;
+  return { ...state, stages: state.stages.map((s) => ({ ...s })), statuses: [...state.statuses], checklists };
+}
+
+/**
+ * Checklist-gated advance: complete the active stage and activate the next ONLY
+ * when `checklistResult.complete` (all items pass). Otherwise the advance is
+ * refused (status/ordering unchanged) and the failing items are returned. The
+ * checklist is recorded on the active stage in both cases (snapshot shows
+ * passed/total). Reuses PFLOW.3 `advance` for the success transition.
+ * @throws PlanningWorkflowStateError if the flow is already complete
+ */
+export function advanceGated(state: PlanningFlowState, checklistResult: ChecklistResult): GatedAdvanceResult {
+  const ai = activeIndex(state);
+  if (ai === -1) {
+    throw new PlanningWorkflowStateError('flow is already complete; no active stage to advance');
+  }
+  const fromId = state.stages[ai].id;
+  // record the checklist on the active stage regardless of the outcome
+  const recorded = setStageChecklist(state, ai, checklistResult);
+
+  if (!checklistResult.complete) {
+    return {
+      advanced: false,
+      from: fromId,
+      to: null,
+      state: recorded, // status unchanged; only the checklist record is attached
+      checklist: checklistResult,
+      failingItems: checklistResult.items.filter((it) => !it.pass),
+    };
+  }
+
+  const advancedState = advance(recorded); // reuse PFLOW.3 ordering transition
+  const nextIdx = ai + 1;
+  return {
+    advanced: true,
+    from: fromId,
+    to: nextIdx < advancedState.stages.length ? advancedState.stages[nextIdx].id : null,
+    state: advancedState,
+    checklist: checklistResult,
+    failingItems: [],
+  };
 }

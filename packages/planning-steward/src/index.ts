@@ -14,6 +14,7 @@ export type {
   FlowStageSnapshot,
   PlanningFlowState,
   StageOrderingProof,
+  GatedAdvanceResult,
 } from './workflow.js';
 export {
   PlanningWorkflowConfigError,
@@ -28,6 +29,9 @@ export {
   activateStage,
   advance,
   assertStageOrderingBarrier,
+  // STORY-PSKILL.4: checklist-gated done transition wired into the flow state
+  setStageChecklist,
+  advanceGated,
 } from './workflow.js';
 
 // STORY-PSKILL.1: doc-authoring skill loader (separate registry from EPIC-014).
