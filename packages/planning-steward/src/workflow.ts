@@ -342,3 +342,99 @@ export function advance(state: PlanningFlowState): PlanningFlowState {
   if (ai + 1 < statuses.length) statuses[ai + 1] = 'active';
   return { ...state, stages: state.stages.map((s) => ({ ...s })), statuses };
 }
+
+// ════════════════════════════════════════════════════════════════════════════
+// STORY-PFLOW.4 — Stage-ordering BARRIER (prove set≠effective)
+//
+// Inherits the prove-*.ts discipline: a *setting* (PFLOW.3's order rule) is not
+// *effective* until proven as a tested invariant. assertStageOrderingBarrier
+// drives the REAL state machine and actively probes the three invariants —
+// it does not merely assert the absence of bad behaviour, it ATTEMPTS the
+// forbidden transitions and verifies they are refused with state left intact.
+// All three holding === the precondition for wiring EPIC-PSKILL's completion
+// check on top. Pure logic over the passed config: zero cost, no provider spend,
+// no I/O, no network (ADR-0013: flow/quality logic, never an access gate).
+// ════════════════════════════════════════════════════════════════════════════
+
+/** Structured result of the stage-ordering barrier (each invariant + composite). */
+export interface StageOrderingProof {
+  refusedOutOfOrder: boolean; // activation is truly refused whenever not allowed (state intact)
+  noWrapOrCorruptOnOverAdvance: boolean; // advancing a complete flow refuses, never wraps/corrupts
+  neverTwoActive: boolean; // ≤1 active across the entire lifecycle
+  allHeld: boolean; // all of the above
+}
+
+const activeCountOf = (s: PlanningFlowState): number => s.statuses.filter((x) => x === 'active').length;
+
+/**
+ * Probe every disallowed activation at the given state: each stage `i` for which
+ * `canActivate` is false (out of order / already active / already done) plus the
+ * two out-of-range indices MUST throw and leave the state byte-identical.
+ * Returns true iff every such attempt was correctly refused with no mutation.
+ */
+function allDisallowedActivationsRefused(state: PlanningFlowState): boolean {
+  const n = state.stages.length;
+  const candidates = [-1, n, ...Array.from({ length: n }, (_, i) => i)];
+  for (const i of candidates) {
+    if (i >= 0 && i < n && canActivate(state, i)) continue; // legitimately allowed → skip
+    const before = JSON.stringify(state);
+    let threw = false;
+    try {
+      activateStage(state, i);
+    } catch {
+      threw = true;
+    }
+    if (!threw) return false; // a disallowed activation was NOT refused
+    if (JSON.stringify(state) !== before) return false; // refusal corrupted state
+  }
+  return true;
+}
+
+/**
+ * The EPIC-PFLOW barrier. Drives the full lifecycle of `config`'s flow, actively
+ * attempting forbidden transitions at every step, and proves the three ordering
+ * invariants. Returns the structured proof; THROWS PlanningWorkflowStateError if
+ * any invariant fails to hold.
+ * @throws PlanningWorkflowStateError
+ */
+export function assertStageOrderingBarrier(config: PlanningWorkflowConfig): StageOrderingProof {
+  const n = config.stages.length;
+
+  let refusedOutOfOrder = true;
+  let neverTwoActive = true;
+
+  // walk init → every advance → complete, probing at each state
+  let s = initFlowState(config);
+  if (activeCountOf(s) > 1) neverTwoActive = false;
+  if (!allDisallowedActivationsRefused(s)) refusedOutOfOrder = false;
+
+  for (let step = 0; step < n; step++) {
+    s = advance(s);
+    if (activeCountOf(s) > 1) neverTwoActive = false;
+    if (!allDisallowedActivationsRefused(s)) refusedOutOfOrder = false;
+  }
+  // after n advances the flow is complete (all done, zero active)
+
+  // ── invariant 2: advancing past the last stage refuses, never wraps/corrupts ──
+  let noWrapOrCorruptOnOverAdvance = true;
+  if (!isComplete(s)) noWrapOrCorruptOnOverAdvance = false;
+  const completeSnapshot = JSON.stringify(s);
+  let overAdvanceThrew = false;
+  try {
+    advance(s);
+  } catch {
+    overAdvanceThrew = true;
+  }
+  if (!overAdvanceThrew) noWrapOrCorruptOnOverAdvance = false; // must refuse, not wrap
+  if (JSON.stringify(s) !== completeSnapshot) noWrapOrCorruptOnOverAdvance = false; // intact
+  if (activeCountOf(s) !== 0) noWrapOrCorruptOnOverAdvance = false; // did not wrap to an active stage
+
+  const allHeld = refusedOutOfOrder && noWrapOrCorruptOnOverAdvance && neverTwoActive;
+  if (!allHeld) {
+    throw new PlanningWorkflowStateError(
+      `stage-ordering barrier FAILED: refusedOutOfOrder=${refusedOutOfOrder}, ` +
+        `noWrapOrCorruptOnOverAdvance=${noWrapOrCorruptOnOverAdvance}, neverTwoActive=${neverTwoActive}`,
+    );
+  }
+  return { refusedOutOfOrder, noWrapOrCorruptOnOverAdvance, neverTwoActive, allHeld };
+}

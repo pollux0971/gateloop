@@ -13,6 +13,7 @@ export type {
   StageStatus,
   FlowStageSnapshot,
   PlanningFlowState,
+  StageOrderingProof,
 } from './workflow.js';
 export {
   PlanningWorkflowConfigError,
@@ -26,6 +27,7 @@ export {
   canActivate,
   activateStage,
   advance,
+  assertStageOrderingBarrier,
 } from './workflow.js';
 
 export type IdeaMode = 'greenfield' | 'brownfield' | 'patch' | 'checkpoint' | 'research_spike';
