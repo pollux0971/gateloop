@@ -60,6 +60,10 @@ export {
 export type { ChecklistItem, ChecklistResult } from './checklist.js';
 export { parseChecklist, evaluateChecklist } from './checklist.js';
 
+// STORY-PSKILL.5: completion barrier (prove checklist-blocks-done + errors surface).
+export type { CompletionBarrierProbes, CompletionProof } from './completionbarrier.js';
+export { assertCompletionBarrier } from './completionbarrier.js';
+
 export type IdeaMode = 'greenfield' | 'brownfield' | 'patch' | 'checkpoint' | 'research_spike';
 
 export interface IdeaInput {
