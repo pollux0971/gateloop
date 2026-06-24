@@ -35,11 +35,21 @@ export type {
   DocSkillFrontmatter,
   DocSkillStep,
   DocSkill,
+  StepSequencer,
 } from './docskill.js';
 export {
   DocSkillLoadError,
   parseSkillFrontmatter,
   loadDocSkill,
+  // STORY-PSKILL.2: just-in-time step sequencer
+  StepSequencerError,
+  initStepSequencer,
+  totalSteps,
+  stepPosition,
+  currentStep,
+  atLastStep,
+  isAuthoringStepComplete,
+  nextStep,
 } from './docskill.js';
 
 export type IdeaMode = 'greenfield' | 'brownfield' | 'patch' | 'checkpoint' | 'research_spike';

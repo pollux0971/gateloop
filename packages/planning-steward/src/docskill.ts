@@ -170,3 +170,80 @@ export function loadDocSkill(skillDir: string): DocSkill {
 
   return { dir: skillDir, frontmatter, body, steps, template, checklist };
 }
+
+// ════════════════════════════════════════════════════════════════════════════
+// STORY-PSKILL.2 — Just-in-time step sequencer
+//
+// Surfaces a skill's steps ONE AT A TIME, in order — currentStep exposes only
+// the step at the cursor (never pre-loads future steps); nextStep advances the
+// cursor. Reaching the last step reports the stage's authoring as STEP-complete
+// (distinct from checklist-complete, which PSKILL.3/4 own). Pure + deterministic:
+// same skill + same position → same current step; every transition returns a new
+// sequencer, the input is never mutated. Flow/quality logic, no access gate.
+// ════════════════════════════════════════════════════════════════════════════
+
+/** Cursor over a skill's ordered steps. `position` is the current step index. */
+export interface StepSequencer {
+  steps: DocSkillStep[];
+  position: number;
+}
+
+/** Thrown when advancing past the last step (no silent wrap). */
+export class StepSequencerError extends Error {
+  constructor(message: string) {
+    super(`step_sequencer: ${message}`);
+    this.name = 'StepSequencerError';
+  }
+}
+
+/** Start a sequencer at the first step of a loaded skill (position 0). */
+export function initStepSequencer(skill: { steps: DocSkillStep[] }): StepSequencer {
+  return { steps: skill.steps.map((s) => ({ ...s })), position: 0 };
+}
+
+/** Total number of steps in the sequence. */
+export function totalSteps(seq: StepSequencer): number {
+  return seq.steps.length;
+}
+
+/** Zero-based index of the current step. */
+export function stepPosition(seq: StepSequencer): number {
+  return seq.position;
+}
+
+/**
+ * The CURRENT step only — never the array, never a future step. Returns null
+ * when the skill has no steps. This is the just-in-time exposure: callers see
+ * one step at a time.
+ */
+export function currentStep(seq: StepSequencer): DocSkillStep | null {
+  if (seq.position < 0 || seq.position >= seq.steps.length) return null;
+  return { ...seq.steps[seq.position] };
+}
+
+/** True when the cursor is on the final step (and there is at least one step). */
+export function atLastStep(seq: StepSequencer): boolean {
+  return seq.steps.length > 0 && seq.position === seq.steps.length - 1;
+}
+
+/**
+ * Authoring step-completeness: the last step has been REACHED (so every step has
+ * been surfaced), or the skill has no steps at all. NOTE: this is step-complete,
+ * NOT checklist-complete — a stage is only `done` when its checklist passes
+ * (PSKILL.3/4).
+ */
+export function isAuthoringStepComplete(seq: StepSequencer): boolean {
+  return seq.steps.length === 0 || seq.position >= seq.steps.length - 1;
+}
+
+/**
+ * Advance to the next step, in order. THROWS StepSequencerError when already on
+ * the last step (authoring is step-complete; there is nothing further to surface).
+ * @throws StepSequencerError
+ */
+export function nextStep(seq: StepSequencer): StepSequencer {
+  if (isAuthoringStepComplete(seq)) {
+    throw new StepSequencerError('already at the last step; authoring is step-complete (cannot advance further)');
+  }
+  return { steps: seq.steps.map((s) => ({ ...s })), position: seq.position + 1 };
+}
