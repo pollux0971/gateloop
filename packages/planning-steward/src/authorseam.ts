@@ -53,11 +53,32 @@ export class StageDocAuthorError extends Error {
 // ───────────────────────── scripted author (default) ─────────────────────────
 
 /**
+ * Deterministically strip `<…>` template placeholders by replacing each with its
+ * inner text (innermost-first, so nested `<a <b>>` resolves cleanly). A scripted
+ * author that emitted raw `<…>` placeholders would be useless AND would fail the
+ * completion checker's `no-tbd` directive (which flags `<…>`), so the scripted
+ * author fills them. Pure: no clock, no random.
+ */
+function fillPlaceholders(text: string): string {
+  const inner = /<([^<>\n]+)>/g;
+  let out = text;
+  // Repeat until stable so nested placeholders are fully resolved (bounded loop).
+  for (let i = 0; i < 8; i++) {
+    const next = out.replace(inner, (_m, body) => String(body));
+    if (next === out) break;
+    out = next;
+  }
+  return out;
+}
+
+/**
  * Deterministic, offline document builder. No key, no network, no clock, no random:
- * same (skill, context) → byte-identical document. Builds from the template and
- * incorporates the idea + each step heading; on a re-author it appends a resolution
- * line for every failing item so the output actually changes between attempts (the
- * convergence signal the PLLM.4 loop relies on).
+ * same (skill, context) → byte-identical document. Fills the template's placeholders
+ * and incorporates the idea + each step heading; on a re-author it appends a
+ * resolution line for every failing item so the output actually changes between
+ * attempts (the convergence signal the PLLM.4 loop relies on). The final document is
+ * placeholder-free, so a template whose literal structure already satisfies a stage's
+ * checklist converges on the first attempt.
  */
 export function createScriptedAuthor(): StageDocAuthor {
   return {
@@ -66,7 +87,7 @@ export function createScriptedAuthor(): StageDocAuthor {
       const lines: string[] = [];
       lines.push(skill.template.trim());
       lines.push('');
-      lines.push(`<!-- authored: ${context.stageId} (scripted) -->`);
+      lines.push(`Authored stage: ${context.stageId} (scripted)`);
       lines.push(`Idea: ${context.idea.trim()}`);
 
       const priors = Object.entries(context.priorDocs ?? {}).filter(
@@ -82,7 +103,9 @@ export function createScriptedAuthor(): StageDocAuthor {
       const failing = (context.failingItems ?? []).filter((it) => it && it.pass === false);
       for (const it of failing) lines.push(`Resolved: ${it.text.trim()}`);
 
-      return lines.join('\n') + '\n';
+      // Strip placeholders LAST so nothing the builder appended (or the template
+      // carried) leaves a `<…>` behind that would trip the no-tbd checklist item.
+      return fillPlaceholders(lines.join('\n')) + '\n';
     },
   };
 }

@@ -91,6 +91,10 @@ export {
   selectStageDocAuthor,
 } from './authorseam.js';
 
+// STORY-PLLM.4: author→advance rewrite loop (feeds checklist failures back; converge/give-up).
+export type { AdvanceOutcome, AuthorAndAdvanceInput, AuthorAndAdvanceResult } from './authorloop.js';
+export { authorAndAdvance } from './authorloop.js';
+
 export type IdeaMode = 'greenfield' | 'brownfield' | 'patch' | 'checkpoint' | 'research_spike';
 
 export interface IdeaInput {

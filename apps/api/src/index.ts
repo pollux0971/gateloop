@@ -182,6 +182,9 @@ app.get('/api/reviewer-directions', async (req: any) => readReviewerDirections(C
 const planningFlow = createPlanningFlowService({ repo: REPO });
 app.get('/api/planning/flow', async () => planningFlow.getFlow());
 app.post('/api/planning/advance', async (req: any) => planningFlow.advance(req.body ?? {}));
+// STORY-PLLM.4: author→advance loop for the active stage (scripted by default; real opt-in,
+// resolved entirely server-side — the key never reaches the browser/response).
+app.post('/api/planning/author', async (req: any) => planningFlow.author(req.body ?? {}));
 
 // ── Cockpit human-action endpoints (record-only; executed:false; never crosses a trust boundary) ──
 // Each records the operator's decision to an append-only log; the dangerous op (promotion, spend,
