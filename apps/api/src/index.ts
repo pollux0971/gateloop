@@ -14,6 +14,7 @@ import {
   decideEscalation, decideHumanGate, recordPromotion, ideaIntake,
   type HumanActionIO, type DecisionRecord,
 } from './humanActions';
+import { createPlanningFlowService } from './planning';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(__dirname, '../../..');            // gateloop/
@@ -175,6 +176,11 @@ app.get('/api/quality-bar', async () => readQualityBar(COCKPIT));
 app.get('/api/failure-bank', async () => readFailureBank(COCKPIT));
 app.get('/api/human-gates', async () => readHumanGates(COCKPIT));
 app.get('/api/reviewer-directions', async (req: any) => readReviewerDirections(COCKPIT, req.query?.story_id));
+
+// ── Planning flow (STORY-PWIRE.1 GET; STORY-PWIRE.2 POST) — live PFLOW engine + PSKILL checker ──
+// Record-only: advance's only condition is the quality checklist; no policy.yaml write, no access gate.
+const planningFlow = createPlanningFlowService({ repo: REPO });
+app.get('/api/planning/flow', async () => planningFlow.getFlow());
 
 // ── Cockpit human-action endpoints (record-only; executed:false; never crosses a trust boundary) ──
 // Each records the operator's decision to an append-only log; the dangerous op (promotion, spend,
