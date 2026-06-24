@@ -64,6 +64,10 @@ export { parseChecklist, evaluateChecklist } from './checklist.js';
 export type { CompletionBarrierProbes, CompletionProof } from './completionbarrier.js';
 export { assertCompletionBarrier } from './completionbarrier.js';
 
+// STORY-PBMAD.4: backend dry-run (brief→epics through engine+runtime+3 skills).
+export type { DryRunStageResult, DryRunResult, DryRunOptions } from './dryrun.js';
+export { runPlanningDryRun, checkStoryGranularity } from './dryrun.js';
+
 export type IdeaMode = 'greenfield' | 'brownfield' | 'patch' | 'checkpoint' | 'research_spike';
 
 export interface IdeaInput {
