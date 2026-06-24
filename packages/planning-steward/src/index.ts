@@ -5,6 +5,17 @@ import type { CodeGraphClient } from '@gateloop/codegraph-adapter';
 import { extractProjectProfile } from '@gateloop/context-manager';
 import type { ProjectProfile } from '@gateloop/context-manager';
 
+// STORY-PFLOW.2: Planning Workflow config schema + deterministic loader.
+export type {
+  PlanningWorkflowStage,
+  PlanningWorkflowConfig,
+} from './workflow.js';
+export {
+  PlanningWorkflowConfigError,
+  parsePlanningWorkflow,
+  loadPlanningWorkflowFile,
+} from './workflow.js';
+
 export type IdeaMode = 'greenfield' | 'brownfield' | 'patch' | 'checkpoint' | 'research_spike';
 
 export interface IdeaInput {

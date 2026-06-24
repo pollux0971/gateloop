@@ -1,0 +1,29 @@
+# Planning Steward spec pipeline — ordered stages (STORY-PFLOW.2 / EPIC-PFLOW)
+#
+# Declares the deterministic ORDER in which the planning documents are authored
+# (brief -> prd -> architecture -> epics) and the doc-authoring skill that drives
+# each stage. The workflow engine (STORY-PFLOW.3) reads this; it never hard-codes
+# the stage list. This is flow/quality logic, NOT an access gate (ADR-0013).
+#
+# Schema: top-level `mode` + `label`, then an ordered `stages:` list where every
+# stage carries { id, name, desc, skill }. `skill: ~` means the stage has no
+# doc-authoring skill (the brief is operator idea-intake, not a BMAD skill).
+mode: greenfield
+label: GREENFIELD
+stages:
+  - id: brief
+    name: 意圖 / Brief
+    desc: 你想做什麼（operator idea intake）
+    skill: ~
+  - id: prd
+    name: PRD
+    desc: 需求草稿 (FR / NFR / success)
+    skill: bmad-prd
+  - id: architecture
+    name: 架構
+    desc: 元件與分層（FR -> module 對應）
+    skill: bmad-architecture
+  - id: epics
+    name: 切 story
+    desc: 可驗收 backlog（epic/story graph）
+    skill: bmad-epics-stories
