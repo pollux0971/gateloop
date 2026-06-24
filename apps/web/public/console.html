@@ -1661,6 +1661,20 @@ gotoPage=function(p){_goto(p);
     if(!window.__planflow) return Promise.resolve(null);
     return window.__planflow.chatAdvance({ doc: doc||'', onMessage: function(html){ if(typeof psSay==='function') psSay(html); } });
   };
+  /* STORY-PLLM.5: REAL mode. DEMO/scripted is the DEFAULT (psRealMode=false) so there
+     is NO real provider call on load — the operator opts in via psSetRealMode(true).
+     When on, psChatAuthor drives the server-side author→advance loop (POST
+     /api/planning/author); the client sends only {idea, mode} — the key stays server-side. */
+  window.psRealMode = false;
+  window.psSetRealMode = function(on){ window.psRealMode = !!on; return window.psRealMode; };
+  window.psChatAuthor = function(idea){
+    if(!window.__planflow) return Promise.resolve(null);
+    return window.__planflow.chatAuthor({
+      idea: idea||'',
+      mode: window.psRealMode ? 'real' : 'scripted',
+      onMessage: function(html){ if(typeof psSay==='function') psSay(html); }
+    });
+  };
 })();
 </script>
 </body>

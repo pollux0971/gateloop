@@ -70,6 +70,10 @@
       fetch: opts.fetch || (typeof window !== 'undefined' ? window.fetch : null),
       base: opts.base != null ? opts.base : apiBase(),
       doc: opts.doc || '',
+      idea: opts.idea || '',
+      // DEFAULT 'scripted' — no real provider call unless the operator opts in.
+      mode: opts.mode === 'real' ? 'real' : 'scripted',
+      maxRewrites: opts.maxRewrites,
     };
   }
 
@@ -137,11 +141,62 @@
     });
   }
 
+  // STORY-PLLM.5 — REAL mode: POST /api/planning/author runs the server-side
+  // author→advance loop for the active stage and returns the produced doc + flow.
+  // The client sends only { idea, mode, maxRewrites } — NO key (the provider call and
+  // key resolution happen entirely server-side). On a response, re-render from res.flow.
+  function author(opts) {
+    var o = resolve(opts);
+    if (!o.fetch) return Promise.resolve({ ok: false, advanced: false, blocked_reason: 'offline', failing_items: [], flow: null });
+    var body = { idea: o.idea, mode: o.mode };
+    if (o.maxRewrites != null) body.maxRewrites = o.maxRewrites;
+    return o
+      .fetch(o.base + '/api/planning/author', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      .then(function (r) { return r.json(); })
+      .then(function (res) {
+        if (res && res.flow) {
+          setBadge(res.flow.source === 'live' ? 'live' : 'demo');
+          renderFlow(o.container, res.flow);
+        }
+        return res;
+      });
+  }
+
+  // STORY-PLLM.5 — the chat drives the REAL author loop. Runs ONLY when the operator
+  // toggles real mode on (the caller passes mode:'real'); DEMO/scripted stays the
+  // default. On a converged author the node-flow advances (author re-rendered it) and
+  // the chat acknowledges; on a blocked/give-up result it surfaces the blocked_reason +
+  // failing items and does NOT advance.
+  function chatAuthor(opts) {
+    opts = opts || {};
+    var say = typeof opts.onMessage === 'function' ? opts.onMessage : function () {};
+    return author(opts).then(function (res) {
+      if (res && res.advanced) {
+        say('✓ ' + (res.stageId || res.from || 'stage') + ' 已由 LLM 草擬並通過' +
+          (res.attempts ? '（' + res.attempts + ' 次嘗試）' : '') +
+          (res.to ? '，進入 ' + res.to : '，流程完成') + '。');
+      } else {
+        var items = (res && res.failing_items) || [];
+        var list = items
+          .map(function (it) { return '• ' + esc(it && (it.text || it.id) ? it.text || it.id : 'item'); })
+          .join('<br>');
+        say('⚠ 無法前進：' + esc((res && res.blocked_reason) || '尚未通過') + (list ? '<br>' + list : ''));
+      }
+      return res;
+    });
+  }
+
   window.__planflow = {
     DEMO_FLOW: DEMO_FLOW,
     renderFlow: renderFlow,
     loadFlow: loadFlow,
     advance: advance,
     chatAdvance: chatAdvance,
+    author: author,
+    chatAuthor: chatAuthor,
   };
 })();
