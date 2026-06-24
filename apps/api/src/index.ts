@@ -181,6 +181,7 @@ app.get('/api/reviewer-directions', async (req: any) => readReviewerDirections(C
 // Record-only: advance's only condition is the quality checklist; no policy.yaml write, no access gate.
 const planningFlow = createPlanningFlowService({ repo: REPO });
 app.get('/api/planning/flow', async () => planningFlow.getFlow());
+app.post('/api/planning/advance', async (req: any) => planningFlow.advance(req.body ?? {}));
 
 // ── Cockpit human-action endpoints (record-only; executed:false; never crosses a trust boundary) ──
 // Each records the operator's decision to an append-only log; the dangerous op (promotion, spend,
