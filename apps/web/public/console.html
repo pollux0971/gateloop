@@ -1654,6 +1654,13 @@ gotoPage=function(p){_goto(p);
 (function(){
   function boot(){ if(window.__planflow){ try{ window.__planflow.loadFlow(); }catch(e){} } }
   if(document.readyState!=='loading') boot(); else document.addEventListener('DOMContentLoaded', boot);
+  /* STORY-PWIRE.4: the Planning-Steward chat drives the advance. Call this when a
+     stage's authoring completes; the node-flow advances on success, or the blocked
+     reason + failing items surface in the chat (psSay) and it does NOT advance. */
+  window.psChatAdvance = function(doc){
+    if(!window.__planflow) return Promise.resolve(null);
+    return window.__planflow.chatAdvance({ doc: doc||'', onMessage: function(html){ if(typeof psSay==='function') psSay(html); } });
+  };
 })();
 </script>
 </body>

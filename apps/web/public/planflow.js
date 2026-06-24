@@ -116,5 +116,32 @@
       });
   }
 
-  window.__planflow = { DEMO_FLOW: DEMO_FLOW, renderFlow: renderFlow, loadFlow: loadFlow, advance: advance };
+  // STORY-PWIRE.4 — the Planning-Steward chat drives the advance. When a stage's
+  // authoring completes in chat, call this with the authored doc: on success the
+  // node-flow advances (advance re-renders); when the checklist is incomplete it
+  // surfaces the blocked reason + failing items via onMessage and does NOT advance.
+  function chatAdvance(opts) {
+    opts = opts || {};
+    var say = typeof opts.onMessage === 'function' ? opts.onMessage : function () {};
+    return advance(opts).then(function (res) {
+      if (res && res.advanced) {
+        say('✓ ' + (res.from || 'stage') + ' 完成' + (res.to ? '，進入 ' + res.to : '，流程完成') + '。');
+      } else {
+        var items = (res && res.failing_items) || [];
+        var list = items
+          .map(function (it) { return '• ' + esc(it && (it.text || it.id) ? it.text || it.id : 'item'); })
+          .join('<br>');
+        say('⚠ 無法前進：' + esc((res && res.blocked_reason) || 'checklist 未通過') + (list ? '<br>' + list : ''));
+      }
+      return res;
+    });
+  }
+
+  window.__planflow = {
+    DEMO_FLOW: DEMO_FLOW,
+    renderFlow: renderFlow,
+    loadFlow: loadFlow,
+    advance: advance,
+    chatAdvance: chatAdvance,
+  };
 })();
