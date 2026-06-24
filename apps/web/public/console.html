@@ -1639,5 +1639,22 @@ gotoPage=function(p){_goto(p);
   });
 })();
 </script>
+<!-- STORY-PWIRE.3: live planning node-flow (importable via window.__planflow; DEMO fallback). -->
+<style>
+  #steps .nf-skill{font-family:var(--mono,monospace);font-size:10px;opacity:.85}
+  #steps .nf-check{font-family:var(--mono,monospace);font-size:10px;opacity:.7}
+  #step-mode[data-source="live"]::after{content:" · LIVE"}
+  #step-mode[data-source="demo"]::after{content:" · DEMO"}
+</style>
+<script src="planflow.js"></script>
+<script>
+/* Bootstrap the live node-flow on load: render from GET /api/planning/flow,
+   falling back to the DEMO flow when the api is offline. Data layer only — the
+   existing guided chat (gfFlow) still drives the DEMO interactions. */
+(function(){
+  function boot(){ if(window.__planflow){ try{ window.__planflow.loadFlow(); }catch(e){} } }
+  if(document.readyState!=='loading') boot(); else document.addEventListener('DOMContentLoaded', boot);
+})();
+</script>
 </body>
 </html>
