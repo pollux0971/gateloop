@@ -10,7 +10,8 @@
     "test:until": "node --experimental-strip-types scripts/test-all.ts --until=L3",
     "ci": "tsc -b --pretty false && node --experimental-strip-types scripts/test-all.ts",
     "test:ci": "tsc -b --pretty false && vitest run",
-    "test:coverage:planning": "vitest run --coverage --config scripts/coverage.config.ts"
+    "test:coverage:planning": "vitest run --coverage --config scripts/coverage.config.ts",
+    "e2e": "playwright test"
   },
   "devDependencies": {
     "@gateloop/agent-core": "workspace:*",
@@ -45,7 +46,9 @@
     "@gateloop/tool-interface": "workspace:*",
     "@gateloop/validator-suite": "workspace:*",
     "@gateloop/workspace-manager": "workspace:*",
+    "@playwright/test": "1.61.1",
     "@types/node": "^22.10.2",
+    "@vitest/coverage-v8": "2.1.9",
     "typescript": "^5.6.3",
     "vitest": "^2.1.8"
   },

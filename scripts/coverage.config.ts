@@ -1,21 +1,26 @@
 /**
  * STORY-PTEST.7 — Coverage gate config for the planning packages.
  *
- * Used by `pnpm test:coverage:planning` (vitest run --coverage --config
- * scripts/coverage.config.ts). The line/statement FLOORS below fail the run on
- * regression (per docs/architecture/29_PLANNING_TEST_STRATEGY.md §3.2). The provider
- * `@vitest/coverage-v8` is an offline-absent dev dependency; enable the actual coverage
- * RUN with a one-time `pnpm add -w -D @vitest/coverage-v8` (the thresholds here are the
- * standing enforcement config, machine-checked by tests/ptest7_ci_gate.test.ts even
- * before the provider is installed). The gated runner (tests/pllm6_real_epics_run.ts)
- * is EXCLUDED from coverage — it never runs in CI and would never be exercised offline.
+ * Run with `pnpm test:coverage:planning` (vitest run --coverage --config
+ * scripts/coverage.config.ts). The FLOORS below fail the run on regression (per
+ * docs/architecture/29_PLANNING_TEST_STRATEGY.md §3.2). Measured baseline (2026-06-25):
+ * planning-steward/src ~95.7% lines / 84% branches / 100% funcs; apps/api/src/planning.ts
+ * 100% lines / 93% branches. The floors sit below the baseline so CI fails only on a real
+ * regression, not on noise.
+ *
+ * SCOPE: only the node-instrumentable product modules the root vitest actually runs —
+ * the @gateloop/planning-steward engine/checker/author core and the apps/api planning
+ * service. apps/web/public/planflow.js is a BROWSER global loaded via <script>/eval in the
+ * jsdom tests (planflow*.test.ts in the @gateloop/web suite + the pwire_dom_landing DOM
+ * test); it is exercised behaviorally there but is not a v8-instrumentable node module, so
+ * it is intentionally OUT of this v8 line-coverage gate. The gated runner
+ * (tests/pllm6_real_epics_run.ts) is excluded — it never runs in CI.
  */
 import { defineConfig } from 'vitest/config';
 
 export const PLANNING_COVERAGE_THRESHOLDS = {
-  'packages/planning-steward/src/**': { lines: 90, statements: 90, functions: 85, branches: 75 },
-  'apps/api/src/planning.ts': { lines: 85, statements: 85, functions: 80, branches: 70 },
-  'apps/web/public/planflow.js': { lines: 75, statements: 75, functions: 70, branches: 60 },
+  'packages/planning-steward/src/**': { lines: 90, statements: 90, functions: 90, branches: 78 },
+  'apps/api/src/planning.ts': { lines: 95, statements: 95, functions: 95, branches: 85 },
 };
 
 export default defineConfig({
@@ -24,10 +29,11 @@ export default defineConfig({
     passWithNoTests: true,
     coverage: {
       provider: 'v8',
-      include: ['packages/planning-steward/src/**', 'apps/api/src/planning.ts', 'apps/web/public/planflow.js'],
+      include: ['packages/planning-steward/src/**', 'apps/api/src/planning.ts'],
       // never measure tests, the gated runner, or generated output.
       exclude: ['**/*.test.ts', 'tests/pllm6_real_epics_run.ts', '**/dist/**'],
       thresholds: PLANNING_COVERAGE_THRESHOLDS,
+      reporter: ['text-summary'],
     },
   },
 });

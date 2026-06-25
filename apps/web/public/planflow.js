@@ -67,7 +67,10 @@
     opts = opts || {};
     return {
       container: opts.container || document.getElementById('steps'),
-      fetch: opts.fetch || (typeof window !== 'undefined' ? window.fetch : null),
+      // window.fetch must keep its Window `this` binding — calling it as `o.fetch(...)`
+      // with an unbound reference throws "Illegal invocation" in real browsers (jsdom is
+      // lenient, which is why STORY-PTEST.5's full-browser E2E caught it). bind to window.
+      fetch: opts.fetch || (typeof window !== 'undefined' && window.fetch ? window.fetch.bind(window) : null),
       base: opts.base != null ? opts.base : apiBase(),
       doc: opts.doc || '',
       idea: opts.idea || '',
