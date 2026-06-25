@@ -46,6 +46,15 @@ describe('cockpit reads — live config/tracker sources', () => {
 
   it('readBacklog: live tracker stories + counts', () => {
     const b = readBacklog(liveCtx);
+    // Fresh gh clone: the sibling builder/ is dev-only and excluded from the published
+    // subtree, so the live source isn't present. Assert the documented graceful fallback
+    // (mirrors the 'missing builder/ → graceful sample fallback' test below). With builder/
+    // present (dev workspace) the full live assertions still run.
+    if (!fs.existsSync(liveCtx.builder)) {
+      expect(b.source).toBe('sample');
+      expect(b.stories).toEqual([]);
+      return;
+    }
     expect(b.source).toBe('live');
     expect(b.stories.length).toBeGreaterThan(0);
     expect(Object.keys(b.counts).length).toBeGreaterThan(0);
