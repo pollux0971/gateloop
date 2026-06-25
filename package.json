@@ -8,7 +8,9 @@
     "walk": "node --experimental-strip-types scripts/walking-skeleton.ts",
     "test:all": "node --experimental-strip-types scripts/test-all.ts",
     "test:until": "node --experimental-strip-types scripts/test-all.ts --until=L3",
-    "ci": "tsc -b --pretty false && node --experimental-strip-types scripts/test-all.ts"
+    "ci": "tsc -b --pretty false && node --experimental-strip-types scripts/test-all.ts",
+    "test:ci": "tsc -b --pretty false && vitest run",
+    "test:coverage:planning": "vitest run --coverage --config scripts/coverage.config.ts"
   },
   "devDependencies": {
     "@gateloop/agent-core": "workspace:*",
